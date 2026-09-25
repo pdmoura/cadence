@@ -1,0 +1,74 @@
+@model LeadListViewModel
+@{
+    ViewData["Title"] = "Leads";
+    ViewData["Eyebrow"] = $"{Model.Leads.Count} shown";
+    string Href(Stage? stage, bool? pending = null)
+    {
+        var q = new List<string>();
+        if (!string.IsNullOrEmpty(Model.Filter.Search)) q.Add("q=" + Uri.EscapeDataString(Model.Filter.Search));
+        if (stage is { } s) q.Add("stage=" + s.Key());
+        if (Model.Filter.OwnerId is { } o) q.Add("owner=" + o);
+        if (pending ?? Model.Filter.PendingOnly) q.Add("pending=true");
+        return "/leads" + (q.Count > 0 ? "?" + string.Join("&", q) : "");
+    }
+}
+@section Actions {
+    <a class="btn btn-primary" href="/leads/new"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span class="label">New lead</span></a>
+}
+
+<form method="get" class="toolbar">
+    <input class="input" style="max-width:320px" type="search" name="q" value="@Model.Filter.Search" placeholder="Search company, contact or email" aria-label="Search" />
+    <select class="select" style="max-width:220px" name="owner" aria-label="Owner" onchange="this.form.submit()">
+        <option value="">Every owner</option>
+        @foreach (var m in Model.Members) { <option value="@m.Id" selected="@(Model.Filter.OwnerId == m.Id)">@m.Name</option> }
+    </select>
+    @if (Model.Filter.Stage is { } st) { <input type="hidden" name="stage" value="@st.Key()" /> }
+    @if (Model.Filter.PendingOnly) { <input type="hidden" name="pending" value="true" /> }
+    <button class="btn btn-secondary" type="submit">Filter</button>
+    <span class="spacer"></span>
+    <a class="chip @(Model.Filter.PendingOnly ? "is-active" : "")" href="@Href(Model.Filter.Stage, !Model.Filter.PendingOnly)">Needs review</a>
+</form>
+
+<div class="chips">
+    <a class="chip @(Model.Filter.Stage is null ? "is-active" : "")" href="@Href(null)">All <span class="count">@Model.Counts.Values.Sum()</span></a>
+    @foreach (var s in Stages.Ordered)
+    {
+        <a class="chip @(Model.Filter.Stage == s ? "is-active" : "")" href="@Href(s)">@s.Label() <span class="count">@Model.Counts[s]</span></a>
+    }
+</div>
+
+<div class="card">
+    <div class="card-body flush">
+        @if (Model.Leads.Count == 0)
+        {
+            <div class="empty"><b>No leads match</b>Try another stage or clear the search.</div>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table class="table">
+                    <thead>
+                    <tr><th>Company</th><th>Contact</th><th>Stage</th><th>Owner</th><th>Score</th><th>Source</th><th class="num">Updated</th></tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var l in Model.Leads)
+                    {
+                        <tr class="is-link" data-href="/leads/@l.Id">
+                            <td>
+                                <div class="cell-title">@l.Company @if (l.PendingSuggestions > 0) { <span class="badge badge-warning no-dot" title="Pending suggestions">@l.PendingSuggestions to review</span> }</div>
+                                <div class="cell-sub">@(l.Industry ?? "Industry unknown")@(l.Country is null ? "" : " · " + l.Country)</div>
+                            </td>
+                            <td><div class="cell-title" style="font-weight:500">@(l.ContactName ?? "-")</div><div class="cell-sub">@(l.ContactTitle ?? l.Email ?? "")</div></td>
+                            <td><span class="badge badge-@l.Stage.Key()">@l.Stage.Label()</span></td>
+                            <td class="cell-muted">@(l.OwnerName ?? "Unassigned")</td>
+                            <td><span class="score"><i><b style="width:@(l.Score)%"></b></i>@l.Score</span></td>
+                            <td class="cell-muted">@l.Source</td>
+                            <td class="num cell-muted">@l.UpdatedAt.ToString("d MMM")</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>

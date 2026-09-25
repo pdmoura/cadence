@@ -1,0 +1,32 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cadence",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "observability": { "enabled": true },
+
+  // The ASP.NET Core app, built from the repo-root Dockerfile and run as a Cloudflare Container.
+  "containers": [
+    {
+      "class_name": "CadenceApp",
+      "image": "../Dockerfile",
+      "max_instances": 2,
+      "instance_type": "basic"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "CADENCE_APP", "class_name": "CadenceApp" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["CadenceApp"] }],
+
+  // Same SQL files the app applies locally. Apply with: wrangler d1 migrations apply cadence --remote
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "cadence",
+      "database_id": "REPLACE_WITH_ID_FROM_wrangler_d1_create",
+      "migrations_dir": "../db/migrations"
+    }
+  ]
+  // Secrets (wrangler secret put): INTERNAL_TOKEN, WEBHOOK_SECRET
+}

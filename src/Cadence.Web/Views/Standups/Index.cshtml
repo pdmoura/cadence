@@ -1,0 +1,77 @@
+@model StandupsViewModel
+@{
+    ViewData["Title"] = "Daily stand-up";
+    ViewData["Eyebrow"] = DateTime.Parse(Model.Day).ToString("dddd, d MMMM yyyy");
+    var mine = Model.Mine;
+}
+@section Actions {
+    <a class="btn btn-secondary" href="/standups/report.txt?day=@Model.Day" target="_blank"><svg class="ic" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg><span class="label">Report as text</span></a>
+}
+
+<div class="chips">
+    @foreach (var d in Model.RecentDays.Union([DateTime.UtcNow.ToString("yyyy-MM-dd")]).OrderByDescending(x => x).Take(10))
+    {
+        <a class="chip @(d == Model.Day ? "is-active" : "")" href="/standups?day=@d">@(d == DateTime.UtcNow.ToString("yyyy-MM-dd") ? "Today" : DateTime.Parse(d).ToString("ddd d MMM"))</a>
+    }
+</div>
+
+<section class="grid grid-3-2">
+    <div class="grid" style="align-content:start">
+        @if (Model.Me is not null && Model.IsToday)
+        {
+            <div class="card">
+                <div class="card-head"><div><h2>@(mine is null ? "Your stand-up" : "Update your stand-up")</h2><p class="sub">Five questions, one line each is enough. Posting as @Model.Me.Name.</p></div></div>
+                <div class="card-body">
+                    <form method="post" action="/standups" class="grid" style="gap:14px">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="day" value="@Model.Day" />
+                        <div class="field"><label for="yesterday">What did I accomplish yesterday?</label><textarea id="yesterday" name="yesterday" class="textarea" style="min-height:64px">@mine?.Yesterday</textarea></div>
+                        <div class="field"><label for="today">What am I going to accomplish today? *</label><textarea id="today" name="today" class="textarea" style="min-height:64px" required>@mine?.Today</textarea></div>
+                        <div class="field"><label for="metric">What measurable result am I working toward?</label><input id="metric" name="metric" class="input" value="@mine?.Metric" placeholder="e.g. 15 touches, 2 replies" /></div>
+                        <div class="field"><label for="blockers">What is blocking me?</label><input id="blockers" name="blockers" class="input" value="@mine?.Blockers" placeholder="Leave empty if nothing" /></div>
+                        <div class="field"><label for="help">What help do I need from the team?</label><input id="help" name="help" class="input" value="@mine?.HelpNeeded" /></div>
+                        <div class="form-actions" style="justify-content:flex-start"><button class="btn btn-primary" type="submit">@(mine is null ? "Post stand-up" : "Save changes")</button></div>
+                    </form>
+                </div>
+            </div>
+        }
+
+        <div class="card">
+            <div class="card-head"><div><h2>Team</h2><p class="sub">@Model.Standups.Count of @Model.Team.Count posted</p></div></div>
+            <div class="card-body flush">
+                @if (Model.Standups.Count == 0) { <div class="empty"><b>Nobody has posted for this day</b></div> }
+                @foreach (var s in Model.Standups)
+                {
+                    <div class="standup-card">
+                        <div class="standup-who">
+                            <span class="avatar" aria-hidden="true">@string.Concat(s.MemberName.Split(' ').Take(2).Select(p => p[0]))</span>
+                            <div><div style="font-weight:600">@s.MemberName</div><div class="role">@(s.MemberRole == "team_lead" ? "Team Lead" : s.MemberRole == "sdr" ? "SDR" : "Developer") · @s.UpdatedAt.ToString("HH:mm")</div></div>
+                        </div>
+                        <dl class="standup-q">
+                            <dt>Yesterday</dt><dd>@(string.IsNullOrWhiteSpace(s.Yesterday) ? "-" : s.Yesterday)</dd>
+                            <dt>Today</dt><dd>@s.Today</dd>
+                            <dt>Measuring</dt><dd>@(string.IsNullOrWhiteSpace(s.Metric) ? "-" : s.Metric)</dd>
+                            <dt>Blockers</dt><dd class="@(string.IsNullOrWhiteSpace(s.Blockers) ? "" : "blocker")">@(string.IsNullOrWhiteSpace(s.Blockers) ? "none" : s.Blockers)</dd>
+                            <dt>Help needed</dt><dd>@(string.IsNullOrWhiteSpace(s.HelpNeeded) ? "none" : s.HelpNeeded)</dd>
+                        </dl>
+                    </div>
+                }
+                @foreach (var m in Model.Team.Where(m => Model.Standups.All(s => s.MemberId != m.Id)))
+                {
+                    <div class="standup-card" style="opacity:.6">
+                        <div class="standup-who"><span class="avatar" style="background:var(--muted)" aria-hidden="true">@m.Initials</span><div><div style="font-weight:600">@m.Name</div><div class="role">@m.RoleLabel</div></div></div>
+                        <p class="cell-muted">Not posted yet.</p>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="card" style="align-self:start">
+        <div class="card-head">
+            <div><h2>Management report</h2><p class="sub">Generated from the stand-ups and the day's pipeline events. Copy, paste, send.</p></div>
+            <button class="btn btn-secondary btn-sm" type="button" data-copy="#report">Copy</button>
+        </div>
+        <div class="card-body"><pre class="report" id="report">@Model.Report</pre></div>
+    </div>
+</section>

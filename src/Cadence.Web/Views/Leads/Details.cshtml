@@ -1,0 +1,156 @@
+@model LeadDetailViewModel
+@{
+    var l = Model.Lead;
+    ViewData["Title"] = l.Company;
+    ViewData["Eyebrow"] = $"Lead #{l.Id} · {l.Stage.Label()}";
+    var next = l.Stage.AllowedNext();
+}
+@section Actions {
+    <a class="btn btn-secondary" href="/leads/@l.Id/edit"><svg class="ic" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg><span class="label">Edit</span></a>
+    <form method="post" action="/leads/@l.Id/enrich" class="inline-form">
+        @Html.AntiForgeryToken()
+        <button class="btn btn-primary" type="submit"><svg class="ic" viewBox="0 0 24 24"><path d="m12 3 1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM5 19l.7 1.8L7.5 21.5 5.7 22.2 5 24l-.7-1.8-1.8-.7 1.8-.7z"/></svg><span class="label">Suggest enrichment</span></button>
+    </form>
+}
+
+<section class="grid grid-3-2">
+    <div class="grid" style="align-content:start">
+        <div class="card">
+            <div class="card-head">
+                <div><h2>Company &amp; contact</h2><p class="sub">Source: @l.Source · created @l.CreatedAt.ToString("d MMM yyyy")</p></div>
+                <span class="score" title="Explainable score: contact quality, reachability, company size, stage"><i><b style="width:@(l.Score)%"></b></i>@l.Score / 100</span>
+            </div>
+            <div class="card-body">
+                <dl class="dl">
+                    <dt>Website</dt><dd class="@(l.Website is null ? "missing" : "")">@if (l.Website is null) { <text>not known</text> } else { <a href="@l.Website" target="_blank" rel="noopener">@l.Website</a> }</dd>
+                    <dt>Industry</dt><dd class="@(l.Industry is null ? "missing" : "")">@(l.Industry ?? "not known")</dd>
+                    <dt>Country</dt><dd class="@(l.Country is null ? "missing" : "")">@(l.Country ?? "not known")</dd>
+                    <dt>Employees</dt><dd class="@(l.Employees is null ? "missing" : "")">@(l.Employees?.ToString() ?? "not known")</dd>
+                    <dt>Contact</dt><dd class="@(l.ContactName is null ? "missing" : "")">@(l.ContactName ?? "not known")@(l.ContactTitle is null ? "" : $" · {l.ContactTitle}")</dd>
+                    <dt>Email</dt><dd class="@(l.Email is null ? "missing" : "")">@if (l.Email is null) { <text>not known</text> } else { <a href="mailto:@l.Email">@l.Email</a> }</dd>
+                    <dt>Phone</dt><dd class="@(l.Phone is null ? "missing" : "")">@(l.Phone ?? "not known")</dd>
+                    <dt>Owner</dt><dd class="@(l.OwnerName is null ? "missing" : "")">@(l.OwnerName ?? "unassigned")</dd>
+                    @if (!string.IsNullOrWhiteSpace(l.Notes)) { <dt>Notes</dt><dd style="white-space:pre-wrap;font-weight:400">@l.Notes</dd> }
+                </dl>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-head">
+                <div><h2>Enrichment suggestions</h2><p class="sub">Proposed by rules or the LLM. A person accepts or rejects each one; accepting writes it to the lead.</p></div>
+                <span class="badge @(Model.Pending.Any() ? "badge-warning" : "badge-neutral") no-dot">@Model.Pending.Count() pending</span>
+            </div>
+            <div class="card-body flush">
+                @if (!Model.Suggestions.Any())
+                {
+                    <div class="empty"><b>No suggestions yet</b>Use "Suggest enrichment" to run the providers on this lead.</div>
+                }
+                @foreach (var s in Model.Pending)
+                {
+                    <div class="suggestion">
+                        <div>
+                            <div class="field-name">@s.FieldLabel</div>
+                            <div class="values">
+                                @if (!string.IsNullOrEmpty(s.CurrentValue)) { <span class="old">@s.CurrentValue</span><span class="arrow">→</span> }
+                                <span>@s.SuggestedValue</span>
+                            </div>
+                            @if (!string.IsNullOrEmpty(s.Rationale)) { <div class="why">@s.Rationale</div> }
+                            <div class="meta">
+                                <span class="badge @(s.Source == "llm" ? "badge-brand" : "badge-neutral") no-dot">@(s.Source == "llm" ? "LLM" : s.Source == "webhook" ? "Webhook" : "Rule")</span>
+                                <span class="confidence"><i><b style="width:@((int)(s.Confidence * 100))%"></b></i>@((int)(s.Confidence * 100))% confidence</span>
+                            </div>
+                        </div>
+                        <div class="actions">
+                            <form method="post" action="/leads/@l.Id/suggestions/@s.Id">@Html.AntiForgeryToken()<input type="hidden" name="decision" value="accept" /><button class="btn btn-success btn-sm" type="submit">Accept</button></form>
+                            <form method="post" action="/leads/@l.Id/suggestions/@s.Id">@Html.AntiForgeryToken()<input type="hidden" name="decision" value="reject" /><button class="btn btn-danger btn-sm" type="submit">Reject</button></form>
+                        </div>
+                    </div>
+                }
+                @foreach (var s in Model.Reviewed)
+                {
+                    <div class="suggestion" style="opacity:.75">
+                        <div>
+                            <div class="field-name">@s.FieldLabel</div>
+                            <div class="values"><span>@s.SuggestedValue</span></div>
+                            <div class="meta">
+                                <span class="badge @(s.Status == SuggestionStatus.Accepted ? "badge-success" : "badge-danger") no-dot">@s.Status</span>
+                                <span class="cell-muted" style="font-size:12.5px">by @(s.ReviewerName ?? "unknown") on @s.ReviewedAt?.ToString("d MMM")</span>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-head"><div><h2>Activity</h2><p class="sub">Every touch with this lead, newest first.</p></div></div>
+            <div class="card-body">
+                <form method="post" action="/leads/@l.Id/activities" class="form-grid" style="margin-bottom:16px">
+                    @Html.AntiForgeryToken()
+                    <div class="field"><label for="kind">Type</label>
+                        <select id="kind" name="kind" class="select"><option value="call">Call</option><option value="email">Email</option><option value="linkedin">LinkedIn</option><option value="meeting">Meeting</option><option value="note">Note</option></select>
+                    </div>
+                    <div class="field"><label for="outcome">Outcome (optional)</label><input id="outcome" name="outcome" class="input" placeholder="Replied, booked, no answer…" /></div>
+                    <div class="field span-2"><label for="summary">What happened</label><input id="summary" name="summary" class="input" required placeholder="One line the team can scan" /></div>
+                    <div class="form-actions span-2"><button class="btn btn-secondary" type="submit">Log activity</button></div>
+                </form>
+                @if (Model.Activities.Count == 0) { <p class="cell-muted">Nothing logged yet.</p> }
+                <div class="list">
+                    @foreach (var a in Model.Activities)
+                    {
+                        <div class="list-item" style="padding-left:0;padding-right:0">
+                            <span class="kind @a.Kind.ToString().ToLowerInvariant()">@await Html.PartialAsync("_KindIcon", a.Kind)</span>
+                            <div class="what"><b>@a.Summary</b><div class="sub">@(a.MemberName ?? "System")@(a.Outcome is null ? "" : " · " + a.Outcome)</div></div>
+                            <span class="when">@a.OccurredAt.ToString("d MMM HH:mm")</span>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid" style="align-content:start">
+        <div class="card">
+            <div class="card-head"><div><h2>Move in the pipeline</h2><p class="sub">Only the moves allowed from <b>@l.Stage.Label()</b> are offered.</p></div></div>
+            <div class="card-body">
+                @if (next.Count == 0)
+                {
+                    <p class="cell-muted">This lead reached the end of the pipeline.</p>
+                }
+                else
+                {
+                    <form method="post" action="/leads/@l.Id/move" class="grid" style="gap:12px">
+                        @Html.AntiForgeryToken()
+                        <div class="field"><label for="to">Next stage</label>
+                            <select id="to" name="to" class="select">@foreach (var s in next) { <option value="@s.Key()">@s.Label()</option> }</select>
+                        </div>
+                        <div class="field"><label for="reason">Reason <span class="hint">(required to disqualify)</span></label><input id="reason" name="reason" class="input" placeholder="Short note for the audit trail" /></div>
+                        <div class="form-actions" style="justify-content:flex-start"><button class="btn btn-primary" type="submit">Move lead</button></div>
+                    </form>
+                    @if (l.Stage == Stage.Researching)
+                    {
+                        <div class="callout" style="margin-top:14px">Validation checks: no pending suggestions, a contact name, and an email or phone.</div>
+                    }
+                }
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-head"><div><h2>History</h2><p class="sub">Stage changes, from the audit table.</p></div></div>
+            <div class="card-body">
+                <div class="timeline">
+                    @foreach (var e in Model.History)
+                    {
+                        <div class="timeline-item">
+                            <span class="timeline-dot @e.To.Key()"></span>
+                            <div class="timeline-body">
+                                <div class="t">@(e.From is null ? "Created" : $"{e.From.Value.Label()} → {e.To.Label()}")</div>
+                                <div class="s">@e.CreatedAt.ToString("d MMM yyyy, HH:mm") · @(e.MemberName ?? "System")@(string.IsNullOrEmpty(e.Reason) ? "" : $" · {e.Reason}")</div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</section>

@@ -1,0 +1,62 @@
+@model ReportsViewModel
+@{
+    ViewData["Title"] = "Reports";
+    ViewData["Eyebrow"] = "Last 14 days";
+    var max = Math.Max(1, Model.Max);
+    int Px(int v) => (int)Math.Round(v * 140.0 / max);
+}
+
+<section class="grid grid-kpi">
+    <div class="card kpi"><span class="kpi-label">Validated</span><span class="kpi-value">@Model.Total(Stage.Validated)</span><span class="kpi-hint">leads a person confirmed as real and reachable</span></div>
+    <div class="card kpi"><span class="kpi-label">Contacted</span><span class="kpi-value">@Model.Total(Stage.Contacted)</span><span class="kpi-hint">first outreach sent</span></div>
+    <div class="card kpi"><span class="kpi-label">Qualified</span><span class="kpi-value">@Model.Total(Stage.Qualified)</span><span class="kpi-hint">handed to sales</span></div>
+    <div class="card kpi"><span class="kpi-label">Suggestion acceptance</span><span class="kpi-value">@((int)(Model.AcceptanceRate * 100))%</span><span class="kpi-hint"><b>@Model.Suggestions.Accepted</b> accepted · <b>@Model.Suggestions.Rejected</b> rejected · <b>@Model.Suggestions.Pending</b> pending</span></div>
+</section>
+
+<section class="grid grid-3-2">
+    <div class="card">
+        <div class="card-head">
+            <div><h2>Stage transitions per day</h2><p class="sub">Counted from the audit table, so re-opened or edited leads do not distort it.</p></div>
+            <div class="legend"><span><i style="background:var(--brand)"></i>Validated</span><span><i style="background:#7f56d9"></i>Contacted</span><span><i style="background:var(--success)"></i>Qualified</span></div>
+        </div>
+        <div class="card-body">
+            <div class="bars" role="img" aria-label="Daily stage transitions">
+                @for (var i = 0; i < Model.Days.Count; i++)
+                {
+                    <div class="bar" title="@Model.Days[i]: @Model.PerDay[Stage.Validated][i] validated, @Model.PerDay[Stage.Contacted][i] contacted, @Model.PerDay[Stage.Qualified][i] qualified">
+                        @if (Model.PerDay[Stage.Qualified][i] > 0) { <span class="qualified" style="height:@Px(Model.PerDay[Stage.Qualified][i])px"></span> }
+                        @if (Model.PerDay[Stage.Contacted][i] > 0) { <span class="contacted" style="height:@Px(Model.PerDay[Stage.Contacted][i])px"></span> }
+                        @if (Model.PerDay[Stage.Validated][i] > 0) { <span class="validated" style="height:@Px(Model.PerDay[Stage.Validated][i])px"></span> }
+                    </div>
+                }
+            </div>
+            <div class="bar-labels">@foreach (var d in Model.Days) { <span>@DateTime.Parse(d).ToString("d/M")</span> }</div>
+        </div>
+    </div>
+
+    <div class="grid" style="align-content:start">
+        <div class="card">
+            <div class="card-head"><div><h2>Pipeline snapshot</h2></div></div>
+            <div class="card-body">
+                @{ var total = Math.Max(1, Model.ByStage.Values.Sum()); }
+                @foreach (var s in Stages.Ordered)
+                {
+                    <div class="stat-row">
+                        <span class="badge badge-@s.Key()" style="width:118px;justify-content:flex-start">@s.Label()</span>
+                        <div class="progress @(s == Stage.Qualified ? "ok" : s == Stage.Disqualified ? "warn" : "")" style="flex:1"><span style="width:@(Model.ByStage[s] * 100 / total)%"></span></div>
+                        <span class="val">@Model.ByStage[s]</span>
+                    </div>
+                }
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-head"><div><h2>By owner</h2><p class="sub">Open leads and qualified wins per person.</p></div></div>
+            <div class="card-body">
+                @foreach (var (m, open, q) in Model.ByOwner)
+                {
+                    <div class="stat-row"><span class="avatar" aria-hidden="true">@m.Initials</span><span class="name">@m.Name<div class="cell-sub">@m.RoleLabel</div></span><span class="val">@open open</span><span class="badge badge-qualified no-dot">@q won</span></div>
+                }
+            </div>
+        </div>
+    </div>
+</section>

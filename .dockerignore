@@ -1,0 +1,14 @@
+**/bin/
+**/obj/
+**/TestResults/
+**/App_Data/
+**/*.db
+**/*.db-wal
+**/*.db-shm
+worker/node_modules/
+worker/.wrangler/
+.git/
+.github/
+docs/
+tests/
+*.md
