@@ -1,0 +1,23 @@
+# Render Blueprint: the ASP.NET Core app as a free Docker web service.
+# Data lives in Cloudflare D1 (free plan) behind the Worker in ./worker, so nothing is lost
+# when Render's free instance sleeps or redeploys (its local disk is ephemeral).
+#
+# Render dashboard -> New -> Blueprint -> pick this repo, then fill the two values marked sync: false.
+services:
+  - type: web
+    name: cadence
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: Database__Backend
+        value: d1
+      - key: Database__WorkerUrl
+        sync: false # e.g. https://cadence-d1.<your-subdomain>.workers.dev
+      - key: Database__InternalToken
+        sync: false # the same value you gave `wrangler secret put INTERNAL_TOKEN`
+      - key: Webhooks__Secret
+        generateValue: true

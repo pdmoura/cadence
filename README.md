@@ -2,7 +2,7 @@
 
 **An SDR workbench: lead pipeline, AI-assisted research with human validation, daily stand-ups and the management report that comes out of them.**
 
-ASP.NET Core MVC · C# 13 / .NET 10 · SQLite locally, Cloudflare D1 in production · Cloudflare Workers + Containers · Docker · xUnit · GitHub Actions
+ASP.NET Core MVC · C# 13 / .NET 10 · SQLite locally, Cloudflare D1 in production · Cloudflare Workers · Docker on Render (or Cloudflare Containers) · xUnit · GitHub Actions
 
 ![Dashboard](docs/screenshots/dashboard.png)
 
@@ -89,25 +89,51 @@ The Automations page prints a ready-to-run `curl` with a valid signature for the
 
 Set `Enrichment__AnthropicApiKey` (and optionally `Enrichment__Model`). The provider asks for strict JSON, validates the fields it gets back, and still only produces suggestions for review. Without the key, the rule-based provider runs alone.
 
-## Deploy to Cloudflare
+## Deploy (free): Cloudflare Worker + D1, app on Render
 
-Requires a Workers Paid plan (Containers) and Wrangler 4.
+Both pieces are on free plans. Cloudflare Workers and D1 hold the data; the ASP.NET Core container runs on Render's free Docker tier. Render's disk is wiped on every sleep and redeploy, which is exactly why the data lives in D1 and not in a SQLite file there.
+
+```
+browser ──▶ Render: ASP.NET Core MVC (Docker) ──HTTPS + token──▶ Cloudflare Worker ──▶ D1
+```
+
+**1. Cloudflare (Worker + D1)**
 
 ```bash
 cd worker && npm install
 npx wrangler login
-npx wrangler d1 create cadence                       # paste the id into wrangler.jsonc
-npx wrangler d1 migrations apply cadence --remote    # same files as db/migrations
-npx wrangler secret put INTERNAL_TOKEN               # shared between Worker and container
-npx wrangler secret put WEBHOOK_SECRET
-npx wrangler deploy                                  # builds ../Dockerfile and pushes the image
+npx wrangler d1 create cadence                        # copy the database_id into wrangler.jsonc
+npx wrangler d1 migrations apply cadence --remote     # same files as db/migrations
+npx wrangler secret put INTERNAL_TOKEN                # any long random string; keep it for step 2
+npx wrangler deploy                                   # prints https://cadence-d1.<subdomain>.workers.dev
 ```
 
-The Worker routes public traffic to the container and answers the container's SQL over `/internal/d1/*`. The container is started with `Database__Backend=d1`, so nothing in the app changes between local and production except configuration.
+**2. Render (the app)**
+
+Render dashboard, New, Blueprint, pick this repository. `render.yaml` creates a free Docker web service; fill in `Database__WorkerUrl` (the workers.dev URL from step 1) and `Database__InternalToken` (the same token). Every push to `main` redeploys.
+
+The free instance sleeps after 15 minutes without traffic, so the first request after a pause takes about a minute.
+
+**Try the whole stack locally, no accounts needed**
+
+```bash
+cd worker
+npx wrangler d1 migrations apply cadence --local
+npx wrangler dev --port 8787                           # token comes from worker/.dev.vars
+# second terminal
+cd src/Cadence.Web
+dotnet run -- --urls http://localhost:8080 --Database:Backend=d1 --Database:WorkerUrl=http://127.0.0.1:8787 --Database:InternalToken=local-dev-token-not-a-secret
+```
+
+`worker/.dev.vars` is gitignored; create it with `INTERNAL_TOKEN=local-dev-token-not-a-secret`.
+
+**All on Cloudflare (Workers Paid)**
+
+`wrangler.containers.jsonc` runs the same image as a Cloudflare Container behind the Worker: `npx wrangler deploy -c wrangler.containers.jsonc`.
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` builds with warnings as errors, runs the test suite, type-checks the Worker and builds the container image on every push and pull request.
+`.github/workflows/ci.yml` builds with warnings as errors, runs the test suite, type-checks the Worker, applies every migration to a local D1 with Wrangler (so the SQL stays D1-compatible) and builds the container image on every push and pull request.
 
 ## About the AI-assisted parts
 

@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
+    "deploy:containers": "wrangler deploy -c wrangler.containers.jsonc",
     "typecheck": "tsc --noEmit",
     "d1:create": "wrangler d1 create cadence",
     "d1:migrate:local": "wrangler d1 migrations apply cadence --local",

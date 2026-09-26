@@ -8,6 +8,10 @@ System.Globalization.CultureInfo.DefaultThreadCurrentUICulture = culture;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Render, Railway and similar hosts tell the app which port to bind through $PORT.
+if (Environment.GetEnvironmentVariable("PORT") is { Length: > 0 } port)
+    builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+
 builder.Services.AddControllersWithViews();
 builder.Services.Configure<RequestLocalizationOptions>(o => { o.DefaultRequestCulture = new("en-US"); o.SupportedCultures = [culture]; o.SupportedUICultures = [culture]; });
 builder.Services.AddHttpContextAccessor();

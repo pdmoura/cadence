@@ -1,0 +1,27 @@
+{
+  // All-Cloudflare deployment (requires Workers Paid for Containers):
+  //   npx wrangler deploy -c wrangler.containers.jsonc
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cadence",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "observability": { "enabled": true },
+
+  "containers": [
+    { "class_name": "CadenceApp", "image": "../Dockerfile", "max_instances": 2, "instance_type": "basic" }
+  ],
+  "durable_objects": { "bindings": [{ "name": "CADENCE_APP", "class_name": "CadenceApp" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["CadenceApp"] }],
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "cadence",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "../db/migrations"
+    }
+  ],
+  // The app calls back into this same Worker for /internal/d1/*.
+  "vars": { "PUBLIC_URL": "https://cadence.<your-subdomain>.workers.dev" }
+  // Secret: INTERNAL_TOKEN
+}

@@ -1,32 +1,23 @@
 {
+  // Free-plan deployment: Worker + D1 only. The ASP.NET Core app runs on Render (see ../render.yaml)
+  // and reaches D1 through this Worker. For the all-Cloudflare setup, use wrangler.containers.jsonc.
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "cadence",
-  "main": "src/index.ts",
+  "name": "cadence-d1",
+  "main": "src/proxy.ts",
   "compatibility_date": "2026-09-01",
   "observability": { "enabled": true },
+  "workers_dev": true,
 
-  // The ASP.NET Core app, built from the repo-root Dockerfile and run as a Cloudflare Container.
-  "containers": [
-    {
-      "class_name": "CadenceApp",
-      "image": "../Dockerfile",
-      "max_instances": 2,
-      "instance_type": "basic"
-    }
-  ],
-  "durable_objects": {
-    "bindings": [{ "name": "CADENCE_APP", "class_name": "CadenceApp" }]
-  },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["CadenceApp"] }],
-
-  // Same SQL files the app applies locally. Apply with: wrangler d1 migrations apply cadence --remote
+  // Same SQL files the app applies to SQLite locally.
+  //   npx wrangler d1 migrations apply cadence --local    (no account needed)
+  //   npx wrangler d1 migrations apply cadence --remote
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "cadence",
-      "database_id": "REPLACE_WITH_ID_FROM_wrangler_d1_create",
+      "database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "../db/migrations"
     }
   ]
-  // Secrets (wrangler secret put): INTERNAL_TOKEN, WEBHOOK_SECRET
+  // Secret (npx wrangler secret put INTERNAL_TOKEN). Locally it comes from .dev.vars.
 }

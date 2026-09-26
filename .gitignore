@@ -487,3 +487,4 @@ $RECYCLE.BIN/
 App_Data/
 worker/node_modules/
 worker/.wrangler/
+worker/.dev.vars

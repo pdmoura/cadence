@@ -25,6 +25,7 @@ public sealed partial class HeuristicEnrichmentProvider : IEnrichmentProvider
 
     private static readonly (string Industry, string[] Keywords)[] IndustryHints =
     [
+        ("Agriculture & food", ["agri", "farm", "produce", "kilimo", "harvest", "dairy"]),
         ("Legal services", ["law", "legal", "attorney", "abogado"]),
         ("Accounting & tax", ["accounting", "cpa", "tax", "bookkeeping", "contabil"]),
         ("Healthcare", ["clinic", "dental", "medical", "health", "care", "pharma"]),

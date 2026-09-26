@@ -38,6 +38,10 @@ jobs:
           cache-dependency-path: worker/package-lock.json
       - run: npm ci
       - run: npm run typecheck
+      - name: Apply migrations to a local D1 (proves the SQL is D1-compatible)
+        run: npx wrangler d1 migrations apply cadence --local
+        env:
+          CI: "1"
 
   container:
     name: Container image

@@ -24,8 +24,12 @@ Cadence is an internal tool; in production it sits behind Cloudflare Access, whi
 
 ## 6. Container talks to D1 through the Worker with a shared token
 
-Containers cannot bind D1 directly. The Worker exposes `/internal/d1/query` and `/internal/d1/batch`, checks `X-Internal-Token`, and forwards everything else to the container. The token is a Wrangler secret and is injected into requests the Worker proxies, so the container never stores it in an image layer.
+Containers cannot bind D1 directly. The Worker exposes `/internal/d1/query` and `/internal/d1/batch`, checks `X-Internal-Token`, and forwards everything else to the container. The token is a Wrangler secret passed to the container as an environment variable at start, so it never sits in an image layer or in the repository.
 
 ## 7. No frontend build step
 
 One stylesheet with design tokens, one 40-line script for progressive enhancement. Razor renders everything server-side; forms work without JavaScript. For a tool the SDR team will change often, fewer moving parts beats a component framework.
+
+## 8. Free-plan production: app on Render, data on D1
+
+Cloudflare Containers need the Workers Paid plan; Workers and D1 do not. The app therefore runs as a Docker service on Render's free tier and reaches D1 through the Worker, which is now a pure data bridge (`worker/src/proxy.ts`). Render's free disk is ephemeral, so keeping the database in D1 is a requirement, not a preference. The all-Cloudflare topology still exists as `wrangler.containers.jsonc`; both share `worker/src/d1.ts`, so the bridge the app talks to is the same code either way. The token check uses a constant-time comparison.
