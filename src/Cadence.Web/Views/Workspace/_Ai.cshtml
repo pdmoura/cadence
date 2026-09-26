@@ -1,0 +1,87 @@
+@using Cadence.Web.Services
+@model WorkspaceViewModel
+@{
+    var s = Model.Settings;
+    var ai = Model.Ai;
+}
+<div class="stack" style="gap:20px">
+    <div class="composer" style="display:flex;gap:10px 14px;align-items:flex-start;flex-wrap:wrap">
+        <span class="badge @(ai.Active ? "badge-ok" : "badge-neutral")" style="flex:none"><span class="dot"></span>@(ai.Active ? "Connected" : ai.Provider == "none" ? "Not connected" : ai.KeyConfigured ? "Switched off" : "Needs a key")</span>
+        <p class="muted" style="margin:0;flex:1;min-width:240px">
+            @if (ai.Active) { <text>Research runs on <b style="color:var(--ink)">@ai.ProviderLabel</b>, model <span class="kbd">@ai.Model</span>, with the key ending in <span class="kbd">@ai.KeyHint</span>.</text> }
+            else { <text>Cadence works without AI: the suggestion rules, pipeline, stand-ups and reports all run on their own. Connect a provider with your own API key to add research briefs.</text> }
+        </p>
+    </div>
+
+    <form method="post" action="/settings/ai" class="stack" style="gap:18px" data-provider="@s.AiProvider">
+        @Html.AntiForgeryToken()
+        <input type="hidden" name="next" value="@Model.Next" />
+
+        <fieldset class="field" style="border:0;padding:0;margin:0">
+            <legend style="font-size:13px;font-weight:600;color:var(--ink);margin-bottom:8px">Provider</legend>
+            <div class="choices">
+                <label class="choice"><input type="radio" name="aiProvider" value="none" checked="@(s.AiProvider == "none")" /><b>No AI</b><span>Rules only. Nothing leaves Cadence.</span></label>
+                <label class="choice"><input type="radio" name="aiProvider" value="anthropic" checked="@(s.AiProvider == "anthropic")" /><b>Anthropic</b><span>Claude models with your Anthropic key.</span></label>
+                <label class="choice"><input type="radio" name="aiProvider" value="openrouter" checked="@(s.AiProvider == "openrouter")" /><b>OpenRouter</b><span>One key for Claude, GPT, Gemini, Llama and more.</span></label>
+            </div>
+        </fieldset>
+
+        <div class="stack" style="gap:16px" data-provider-panel="anthropic openrouter">
+            <div class="field">
+                <label for="apiKey">API key</label>
+                <input id="apiKey" name="apiKey" type="password" class="input" autocomplete="off" spellcheck="false"
+                       placeholder="@(ai.KeyConfigured ? $"Saved key ending in {ai.KeyHint}. Paste a new one to replace it." : "Paste your API key")" />
+                <span class="hint">
+                    Stored encrypted and never shown again. Get one from
+                    <a class="card-link" href="@AiClient.Providers[0].KeyUrl" target="_blank" rel="noopener">Anthropic</a> or
+                    <a class="card-link" href="@AiClient.Providers[1].KeyUrl" target="_blank" rel="noopener">OpenRouter</a>. Usage is billed by your provider.
+                </span>
+                @if (ai.KeyConfigured)
+                {
+                    <label style="display:flex;gap:8px;align-items:center;font-size:13px;color:var(--muted);margin-top:4px"><input type="checkbox" name="removeKey" value="true" style="accent-color:var(--dq)" /> Remove the saved key</label>
+                }
+            </div>
+
+            <div class="field" data-provider-panel="anthropic">
+                <label for="aiModel">Model</label>
+                <select id="aiModel" name="aiModel" class="select">
+                    @foreach (var m in AiClient.AnthropicModels) { <option value="@m.Id" selected="@(s.AiModel == m.Id)" data-title="@m.Label" data-sub="@m.Note">@m.Label</option> }
+                </select>
+            </div>
+
+            <div class="field" data-provider-panel="openrouter">
+                <label for="openRouterModel">Model</label>
+                <input id="openRouterModel" name="openRouterModel" class="input mono" value="@(s.AiProvider == "openrouter" ? s.AiModel : "openrouter/auto")" placeholder="openrouter/auto" spellcheck="false" />
+                <span class="hint">Any model ID from <a class="card-link" href="https://openrouter.ai/models" target="_blank" rel="noopener">openrouter.ai/models</a>. <span class="kbd">openrouter/auto</span> lets OpenRouter pick.</span>
+            </div>
+
+            <label class="switch" style="padding-bottom:0"><input type="checkbox" name="aiEnabled" value="true" checked="@s.AiEnabled" /><span><b>Use AI for research</b><span>Switch off to pause AI without removing the key.</span></span></label>
+        </div>
+
+        <div class="form-actions" style="justify-content:space-between;flex-wrap:wrap">
+            <span></span>
+            <button class="btn btn-primary" type="submit">@(Model.IsWizard ? "Save and finish" : "Save")</button>
+        </div>
+    </form>
+
+    @if (ai.KeyConfigured && ai.Provider != "none")
+    {
+        <form method="post" action="/settings/ai/test" data-loading>
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="next" value="@Model.Here" />
+            <button class="btn btn-secondary" type="submit"><span>Test connection</span></button>
+        </form>
+    }
+
+    <details class="disclosure composer">
+        <summary style="font-weight:700;color:var(--ink)">What is sent to the AI, and what it does</summary>
+        <div class="prose" style="margin-top:10px;font-size:13.5px">
+            <ul>
+                <li>Sent: the lead's company, contact, title, email, phone, website, country, size and notes, plus your workspace's product, ideal customer and markets.</li>
+                <li>Returned: suggested values for missing fields and a research brief with a fit rating and an opening line.</li>
+                <li>Nothing is saved automatically. Every suggestion waits for a person to accept or reject it.</li>
+                <li>Leads from forms, Zapier and CSV are researched in the background; the "Research" button on a lead runs it on demand.</li>
+            </ul>
+        </div>
+    </details>
+</div>

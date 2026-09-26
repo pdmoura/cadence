@@ -1,66 +1,179 @@
 @model AutomationsViewModel
 @{
     ViewData["Title"] = "Automations";
-    ViewData["Eyebrow"] = "Work the SDR team no longer does by hand.";
-    var accepted = Model.Deliveries.Count(d => d.Status == "accepted");
-    var rejected = Model.Deliveries.Count(d => d.Status != "accepted");
+    ViewData["Eyebrow"] = "Get leads in without typing, and tell the team when something important happens.";
+    var s = Model.Settings;
+    string Status(params string[] names)
+    {
+        var hits = names.Select(n => Model.Source(n)).Where(v => v is not null).Select(v => v!.Value).ToList();
+        if (hits.Count == 0) return "";
+        var total = hits.Sum(h => h.Count);
+        var last = hits.Max(h => h.Last);
+        return $"{total} lead{(total == 1 ? "" : "s")} received · last {last:d MMM, HH:mm}";
+    }
+    var formSnippet = $"""
+<form action="{Model.IntakeUrl}" method="POST">
+  <input name="company" placeholder="Company" required>
+  <input name="name" placeholder="Your name">
+  <input name="email" type="email" placeholder="Work email" required>
+  <input name="phone" placeholder="Phone">
+  <textarea name="message" placeholder="How can we help?"></textarea>
+  <!-- spam trap: leave hidden -->
+  <input name="_gotcha" style="display:none" tabindex="-1" autocomplete="off">
+  <!-- where to send the visitor afterwards -->
+  <input type="hidden" name="_redirect" value="https://yoursite.com/thanks">
+  <button type="submit">Send</button>
+</form>
+""";
+    var curlKey = $"""
+curl -X POST {Model.BaseUrl}/webhooks/leads \
+  -H "Content-Type: application/json" \
+  -H "X-Cadence-Key: {s.IntakeKey}" \
+  -d '{Model.ExampleBody}'
+""";
+    var curlSigned = $"""
+curl -X POST {Model.BaseUrl}/webhooks/leads \
+  -H "Content-Type: application/json" \
+  -H "X-Cadence-Signature: {Model.ExampleSignature}" \
+  -d '{Model.ExampleBody}'
+""";
+}
+@section Actions {
+    <a class="btn btn-secondary" href="/guide#automations"><svg class="ic" viewBox="0 0 24 24"><path d="M4 19.5V5a2 2 0 0 1 2-2h14v16H6.5A2.5 2.5 0 0 0 4 21.5zM20 19v3H6.5"/></svg><span class="label">Read the guide</span></a>
+    <form method="post" action="/automations/test-lead" class="inline-form">
+        @Html.AntiForgeryToken()
+        <button class="btn btn-primary" type="submit"><svg class="ic" viewBox="0 0 24 24"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg><span class="label">Send a test lead</span></button>
+    </form>
 }
 
-<section class="grid grid-main">
-    <div class="card">
-        <div class="card-head">
-            <h2 class="card-title">Inbound lead webhook</h2>
-            @if (Model.SecretConfigured) { <span class="badge badge-ok"><span class="dot"></span>Signed</span> } else { <span class="badge badge-bad"><span class="dot"></span>Secret missing</span> }
-        </div>
-        <div class="card-body">
-            <p class="muted" style="margin-bottom:8px">Forms and ad platforms post here. Each delivery is verified, de-duplicated by email and queued for enrichment.</p>
-            <div class="code-row"><span class="k">Endpoint</span><code>POST /webhooks/leads</code></div>
-            <div class="code-row"><span class="k">Header</span><code>X-Cadence-Signature: sha256=&lt;HMAC of body&gt;</code></div>
-            <div class="code-row"><span class="k">Replies</span><span class="chips"><span class="badge badge-ok">201 created</span><span class="badge badge-neutral">200 duplicate</span><span class="badge badge-bad">401 bad signature</span></span></div>
-            <details class="disclosure" style="margin-top:14px">
-                <summary class="btn btn-secondary btn-sm"><span class="when-closed">Try it with curl</span><span class="when-open">Hide example</span></summary>
-                <div class="stack" style="gap:10px;margin-top:14px">
-                    <pre class="snippet">curl -X POST @(Context.Request.Scheme)://@(Context.Request.Host)/webhooks/leads \
-  -H "Content-Type: application/json" \
-  -H "X-Cadence-Signature: @Model.ExampleSignature" \
-  -d '@Model.ExampleBody'</pre>
-                    <p class="hint">The signature is valid only for this exact body, so the example can be shared safely.</p>
+<section class="stack" style="gap:14px">
+    <h2 style="font-size:17px">Get leads in</h2>
+    <div class="sources">
+        <div class="card source">
+            <div class="top"><span class="ico"><svg class="ic" viewBox="0 0 24 24"><path d="M3 5h18v14H3zM3 9h18M7 13h6"/></svg></span><div><h3>Website form</h3><span class="muted" style="font-size:12.5px">No code. Webflow, WordPress, Wix, any HTML.</span></div></div>
+            <p>Point your contact form at your intake address. Visitors land on your thank-you page; the lead lands here.</p>
+            @if (Status("website-form") is { Length: > 0 } st1) { <span class="status live">@st1</span> } else { <span class="status">Waiting for the first submission</span> }
+            <details class="disclosure">
+                <summary class="btn btn-secondary btn-sm"><span class="when-closed">Setup guide</span><span class="when-open">Hide guide</span></summary>
+                <div class="stack" style="gap:12px;margin-top:14px">
+                    <ol class="steps-list">
+                        <li>Open your form's settings and set its action (or "send to URL") to your intake address.</li>
+                        <li>Name the fields <span class="kbd">company</span>, <span class="kbd">name</span>, <span class="kbd">email</span>, <span class="kbd">phone</span>, <span class="kbd">message</span>. Only company or email is required.</li>
+                        <li>Optional: add <span class="kbd">_redirect</span> with your thank-you page, and the hidden <span class="kbd">_gotcha</span> field to catch bots.</li>
+                        <li>Submit the form once and check the delivery log below.</li>
+                    </ol>
+                    <div class="copy-row"><input id="intake-url" class="input" readonly value="@Model.IntakeUrl" /><button class="btn btn-secondary btn-sm" type="button" data-copy="#intake-url">Copy</button></div>
+                    <pre class="snippet" id="form-snippet">@formSnippet</pre>
+                    <button class="btn btn-ghost btn-sm" type="button" data-copy="#form-snippet" style="justify-self:start">Copy HTML</button>
                 </div>
             </details>
         </div>
-    </div>
 
-    <div class="card">
-        <div class="card-head"><h2 class="card-title">Running today</h2></div>
-        <div class="card-body" style="padding-top:4px">
-            <div class="kv"><span class="k">Lead intake from forms</span><span class="badge badge-ok">Live</span></div>
-            <div class="kv"><span class="k">Website, industry and phone rules</span><span class="badge badge-ok">Live</span></div>
-            <div class="kv"><span class="k">Daily report from stand-ups</span><span class="badge badge-ok">Live</span></div>
-            <div class="kv"><span class="k">LLM field proposals</span><span class="badge badge-brand">Optional</span></div>
-            <div class="kv"><span class="k">Reply detection</span><span class="badge badge-neutral">Next</span></div>
+        <div class="card source">
+            <div class="top"><span class="ico"><svg class="ic" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg></span><div><h3>Zapier, Make or n8n</h3><span class="muted" style="font-size:12.5px">Connect 6,000+ apps: ads, CRMs, calendars.</span></div></div>
+            <p>Add one "send a web request" step to any automation, for example a new Facebook lead ad or a HubSpot form.</p>
+            @if (Status("zapier", "make", "n8n", "webhook") is { Length: > 0 } st2) { <span class="status live">@st2</span> } else { <span class="status">No automated deliveries yet</span> }
+            <details class="disclosure">
+                <summary class="btn btn-secondary btn-sm"><span class="when-closed">Setup guide</span><span class="when-open">Hide guide</span></summary>
+                <div class="stack" style="gap:12px;margin-top:14px">
+                    <ol class="steps-list">
+                        <li><b>Zapier:</b> add the action "Webhooks by Zapier", event <b>POST</b>. <b>Make:</b> add the "HTTP, Make a request" module. <b>n8n:</b> add an "HTTP Request" node.</li>
+                        <li>URL: <span class="kbd">@Model.BaseUrl/webhooks/leads</span>, method POST, body type JSON.</li>
+                        <li>Add the header <span class="kbd">X-Cadence-Key</span> with your intake key.</li>
+                        <li>Map your trigger's fields to <span class="kbd">company</span>, <span class="kbd">contact_name</span>, <span class="kbd">email</span>, <span class="kbd">phone</span>, <span class="kbd">website</span>, <span class="kbd">notes</span>, and set <span class="kbd">source</span> to "zapier", "make" or "n8n".</li>
+                        <li>Run the test in your tool. Duplicates by email are answered with <span class="kbd">200 duplicate</span> and not created twice.</li>
+                    </ol>
+                    <div class="copy-row"><input id="intake-key" class="input" readonly value="@s.IntakeKey" /><button class="btn btn-secondary btn-sm" type="button" data-copy="#intake-key">Copy key</button></div>
+                    <pre class="snippet" id="curl-key">@curlKey</pre>
+                </div>
+            </details>
+        </div>
+
+        <div class="card source">
+            <div class="top"><span class="ico"><svg class="ic" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h8"/></svg></span><div><h3>Spreadsheet (CSV)</h3><span class="muted" style="font-size:12.5px">Exports from HubSpot, Apollo, Sales Navigator, Excel.</span></div></div>
+            <p>Upload up to 200 rows at a time. Column names are recognised automatically and known emails are skipped.</p>
+            @if (Status("csv") is { Length: > 0 } st3) { <span class="status live">@st3</span> } else { <span class="status">Nothing imported yet</span> }
+            <div class="chips"><a class="btn btn-secondary btn-sm" href="/leads/import">Import a CSV</a><a class="btn btn-ghost btn-sm" href="/leads/import/template.csv">Download template</a></div>
+        </div>
+
+        <div class="card source">
+            <div class="top"><span class="ico"><svg class="ic" viewBox="0 0 24 24"><path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/></svg></span><div><h3>Developers</h3><span class="muted" style="font-size:12.5px">Signed webhooks for your own backend.</span></div></div>
+            <p>Sign the raw body with HMAC-SHA256 instead of sending the key, so the secret never travels with the request.</p>
+            @if (Model.SecretConfigured) { <span class="status live">Signing secret configured</span> } else { <span class="status">Set Webhooks:Secret on the server</span> }
+            <details class="disclosure">
+                <summary class="btn btn-secondary btn-sm"><span class="when-closed">Reference</span><span class="when-open">Hide reference</span></summary>
+                <div class="stack" style="gap:12px;margin-top:14px">
+                    <div class="code-row"><span class="k">Header</span><code>X-Cadence-Signature: sha256=HMAC_SHA256(secret, raw body)</code></div>
+                    <div class="code-row"><span class="k">Replies</span><span class="chips"><span class="badge badge-ok">201 created</span><span class="badge badge-neutral">200 duplicate</span><span class="badge badge-bad">401 bad signature</span><span class="badge badge-warn">400 bad payload</span></span></div>
+                    <pre class="snippet">@curlSigned</pre>
+                    <p class="hint">That signature is valid only for that exact body, so the example is safe to share.</p>
+                </div>
+            </details>
         </div>
     </div>
 </section>
 
 <section class="card">
     <div class="card-head">
-        <h2 class="card-title">Deliveries</h2>
-        <span class="muted num">@accepted accepted · @rejected rejected</span>
+        <h2 class="card-title">What happens to every new lead</h2>
+        <a class="card-link" href="/settings?tab=sources">Change</a>
+    </div>
+    <div class="card-body">
+        <div class="flow">
+            <div class="flow-step"><span class="badge badge-ok">Always</span><b>1. De-duplicate</b><span>A known email is linked to the existing lead instead of creating a copy.</span></div>
+            <div class="flow-step"><span class="badge @(s.AutoAssign ? "badge-ok" : "badge-neutral")">@(s.AutoAssign ? "On" : "Off")</span><b>2. Assign</b><span>Goes to the SDR with the fewest open leads.</span></div>
+            <div class="flow-step"><span class="badge @(s.AutoEnrich ? "badge-ok" : "badge-neutral")">@(s.AutoEnrich ? "On" : "Off")</span><b>3. Suggest details</b><span>Website, industry and phone format, queued for review.</span></div>
+            <div class="flow-step"><span class="badge @(Model.Ai.Active ? "badge-ok" : "badge-neutral")">@(Model.Ai.Active ? Model.Ai.ProviderLabel : "Not connected")</span><b>4. AI research</b><span>Fit rating and an opening line, in the background. <a class="card-link" href="/settings?tab=ai">@(Model.Ai.Active ? "Settings" : "Connect")</a></span></div>
+            <div class="flow-step"><span class="badge @(string.IsNullOrEmpty(s.OutboundUrl) ? "badge-neutral" : "badge-ok")">@(string.IsNullOrEmpty(s.OutboundUrl) ? "Not set" : "On")</span><b>5. Notify</b><span>Posts to Slack, Teams, Discord or your endpoint.</span></div>
+        </div>
+    </div>
+</section>
+
+<section class="card" id="notifications">
+    <div class="card-head">
+        <h2 class="card-title">Notifications</h2>
+        @if (string.IsNullOrEmpty(s.OutboundUrl)) { <a class="btn btn-secondary btn-sm" href="/settings?tab=sources#notifications">Add a channel</a> }
+        else
+        {
+            <form method="post" action="/automations/test-notification" data-loading class="inline-form">
+                @Html.AntiForgeryToken()
+                <button class="btn btn-secondary btn-sm" type="submit"><span>Send a test</span></button>
+            </form>
+        }
+    </div>
+    <div class="card-body">
+        @if (string.IsNullOrEmpty(s.OutboundUrl))
+        {
+            <p class="muted">Paste a Slack, Microsoft Teams or Discord incoming-webhook URL in Settings to hear about new and qualified leads where the team already talks. The team lead can also send the daily stand-up report there with one click.</p>
+        }
+        else
+        {
+            <div class="code-row"><span class="k">Channel</span><code>@(new Uri(s.OutboundUrl).Host)</code></div>
+            <div class="code-row"><span class="k">Events</span><span class="chips">@foreach (var e in s.OutboundEvents) { <span class="badge badge-brand">@e</span> }</span></div>
+        }
+    </div>
+</section>
+
+<section class="card">
+    <div class="card-head">
+        <h2 class="card-title">Delivery log</h2>
+        <span class="muted num">Last @Model.Deliveries.Count</span>
     </div>
     <div class="table-wrap">
         <table class="table">
-            <thead><tr><th>Received</th><th class="hide-sm">Source</th><th>Result</th><th class="hide-sm">Payload</th></tr></thead>
+            <thead><tr><th>When</th><th>Direction</th><th class="hide-sm">Source</th><th>Result</th><th class="hide-sm">Payload</th></tr></thead>
             <tbody>
             @foreach (var d in Model.Deliveries)
             {
                 <tr>
                     <td class="muted num" style="white-space:nowrap">@d.ReceivedAt.ToString("d MMM, HH:mm")</td>
+                    <td><span class="badge @(d.Direction == "outbound" ? "badge-contacted" : "badge-neutral")">@(d.Direction == "outbound" ? "Out" : "In")</span></td>
                     <td class="hide-sm">@d.Source</td>
                     <td>
-                        <span class="badge @(d.Status == "accepted" ? "badge-ok" : d.Status == "rejected" ? "badge-bad" : "badge-warn")">@(d.Status == "accepted" ? "Accepted" : d.Status == "rejected" ? "Rejected" : "Error")</span>
+                        <span class="badge @(d.Status == "accepted" ? "badge-ok" : d.Status == "rejected" ? "badge-bad" : "badge-warn")">@(d.Status == "accepted" ? (d.Direction == "outbound" ? "Delivered" : "Accepted") : d.Status == "rejected" ? "Rejected" : "Error")</span>
                         <div class="cell-sub">@if (d.LeadId is { } id) { <a class="card-link" href="/leads/@id">@d.Detail</a> } else { @d.Detail }</div>
                     </td>
-                    <td class="hide-sm"><code style="display:block;max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)" title="@d.Payload">@d.Payload</code></td>
+                    <td class="hide-sm"><code style="display:block;max-width:380px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)" title="@d.Payload">@d.Payload</code></td>
                 </tr>
             }
             </tbody>

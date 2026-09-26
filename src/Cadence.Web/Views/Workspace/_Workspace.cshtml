@@ -1,0 +1,18 @@
+@model WorkspaceViewModel
+@{ var s = Model.Settings; }
+<form method="post" action="/settings/workspace" class="stack" style="gap:16px">
+    @Html.AntiForgeryToken()
+    <input type="hidden" name="next" value="@Model.Next" />
+    <div class="field"><label for="workspaceName">Workspace name</label><input id="workspaceName" name="workspaceName" class="input" value="@s.WorkspaceName" placeholder="Your company" required /></div>
+    <div class="field">
+        <label for="product">What you sell</label>
+        <textarea id="product" name="product" class="textarea" rows="2" placeholder="One or two sentences, the way you would say it on a first call.">@s.Product</textarea>
+    </div>
+    <div class="field">
+        <label for="icp">Ideal customer</label>
+        <textarea id="icp" name="icp" class="textarea" rows="3" placeholder="Industries, company size, roles you sell to, and the signals that make a lead worth calling.">@s.Icp</textarea>
+        <span class="hint">The AI research assistant uses this to judge fit and write openers. The clearer it is, the better the briefs.</span>
+    </div>
+    <div class="field"><label for="markets">Markets</label><input id="markets" name="markets" class="input" value="@s.Markets" placeholder="United States, Kenya, Brazil" /></div>
+    <div class="form-actions"><button class="btn btn-primary" type="submit">@(Model.IsWizard ? "Save and continue" : "Save")</button></div>
+</form>

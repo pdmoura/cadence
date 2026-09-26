@@ -76,7 +76,17 @@
     <div class="card sticky">
         <div class="card-head">
             <h2 class="card-title">Report for management</h2>
-            <button class="btn btn-secondary btn-sm" type="button" data-copy="#report">Copy</button>
+            <div class="chips">
+                <button class="btn btn-secondary btn-sm" type="button" data-copy="#report">Copy</button>
+                @if (Model.CanSend)
+                {
+                    <form method="post" action="/standups/send" class="inline-form" data-loading>
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="day" value="@Model.Day" />
+                        <button class="btn btn-primary btn-sm" type="submit"><span>Send to channel</span></button>
+                    </form>
+                }
+            </div>
         </div>
         <div class="card-body"><pre class="report" id="report">@Model.Report</pre></div>
     </div>

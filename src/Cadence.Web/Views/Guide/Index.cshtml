@@ -1,0 +1,82 @@
+@using Cadence.Web.Services
+@{
+    ViewData["Title"] = "Guide";
+    ViewData["Eyebrow"] = "How a sales-development team runs its day in Cadence";
+    var s = (WorkspaceSettings)ViewData["Settings"]!;
+    var ai = (AiStatus)ViewData["Ai"]!;
+}
+@section Actions {
+    <a class="btn btn-primary" href="/setup"><svg class="ic" viewBox="0 0 24 24"><path d="m12 3 1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg><span class="label">Run setup</span></a>
+}
+
+<div class="doc-grid">
+    <nav class="doc-nav" aria-label="On this page">
+        <a href="#what">What Cadence is for</a>
+        <a href="#day">A day with Cadence</a>
+        <a href="#roles">Roles</a>
+        <a href="#pipeline">Pipeline stages</a>
+        <a href="#automations">Getting leads in</a>
+        <a href="#ai">AI research</a>
+        <a href="#faq">Questions</a>
+    </nav>
+
+    <article class="card"><div class="card-body" style="padding-top:26px">
+    <div class="prose">
+        <h2 id="what" style="margin-top:0">What Cadence is for</h2>
+        <p>Cadence is the daily workbench for a sales-development team: the people who find companies worth talking to, check that the contact is real, reach out, and hand qualified conversations to sales. It replaces the spreadsheet, the scattered CRM notes and the end-of-day status message with one place that keeps everyone honest about what happened.</p>
+        <p>It is built around three habits that make SDR teams effective: a short daily stand-up, a pipeline with clear rules for each step, and research that is fast but always checked by a person.</p>
+
+        <h2 id="day">A day with Cadence</h2>
+        <ol>
+            <li><b>Stand-up (5 minutes).</b> Each person answers five questions on the <a href="/standups">Stand-up</a> page: what they finished yesterday, today's plan, the number they are chasing, blockers, and the help they need. The team lead copies the generated report to management or sends it to Slack.</li>
+            <li><b>Review suggestions.</b> New leads arrive from forms, Zapier or a CSV. Cadence proposes missing details and, with AI connected, a research brief. Open <a href="/leads?pending=true">Needs review</a> and accept or reject each one.</li>
+            <li><b>Research and validate.</b> Move a lead to <i>Researching</i>, confirm the contact and a way to reach them, then to <i>Validated</i>. Cadence will not validate a lead with unanswered suggestions or no email or phone.</li>
+            <li><b>Reach out and log it.</b> Every call, email, LinkedIn message or meeting goes into the lead's activity with one line. It feeds the touches goal on the home page.</li>
+            <li><b>Qualify or let go.</b> <i>Qualified</i> hands the lead to sales and can notify a channel. <i>Disqualified</i> needs a reason, which shows up in the reports.</li>
+        </ol>
+
+        <h2 id="roles">Roles</h2>
+        <ul>
+            <li><b>SDR:</b> owns leads, reviews suggestions, logs activity, posts a stand-up.</li>
+            <li><b>Team lead:</b> runs the daily meeting, watches the goals and the report, unblocks people.</li>
+            <li><b>Developer:</b> connects lead sources and notifications, and improves the automations.</li>
+        </ul>
+        <p>Switch who you are acting as from the card at the bottom of the sidebar. In production Cadence sits behind a company login such as Cloudflare Access, so there is no separate password.</p>
+
+        <h2 id="pipeline">Pipeline stages</h2>
+        <ul>
+            <li><b>New:</b> just arrived. Nothing checked yet.</li>
+            <li><b>Researching:</b> someone is confirming the company and the contact.</li>
+            <li><b>Validated:</b> real, reachable, and a fit. Requires a contact name, an email or phone, and no pending suggestions.</li>
+            <li><b>Contacted:</b> first outreach sent.</li>
+            <li><b>Qualified:</b> a real conversation happened; sales takes it from here.</li>
+            <li><b>Disqualified:</b> not a fit or not now, with a reason. Can be reopened into Researching.</li>
+        </ul>
+        <p>Every move is recorded with who made it and why, and the reports count those events, so editing a lead later never rewrites last week's numbers.</p>
+
+        <h2 id="automations">Getting leads in</h2>
+        <ul>
+            <li><b>Website form:</b> point any HTML form at your intake address. No code, works with Webflow, WordPress and Wix.</li>
+            <li><b>Zapier, Make, n8n:</b> one web-request step with your intake key in the <code>X-Cadence-Key</code> header.</li>
+            <li><b>CSV:</b> upload exports from HubSpot, Apollo, Sales Navigator or Excel; columns are matched by name.</li>
+            <li><b>Developers:</b> send JSON signed with HMAC-SHA256 in <code>X-Cadence-Signature</code>.</li>
+        </ul>
+        <p>Whatever the source, each lead is de-duplicated by email, optionally assigned to the SDR with the lightest workload, given suggestions, and announced in your notification channel. Step-by-step setup lives on the <a href="/automations">Automations</a> page.</p>
+
+        <h2 id="ai">AI research</h2>
+        <p>AI is optional. Without it, the suggestion rules still fill in websites from email domains, industries from company names, and phone formats.</p>
+        <p>To add research briefs, open <a href="/settings?tab=ai">Settings, AI</a>, choose <b>Anthropic</b> (Claude models) or <b>OpenRouter</b> (one key for Claude, GPT, Gemini, Llama and others), and paste your own API key. The key is stored encrypted, shown only by its last four characters, and billed by your provider. Currently: <b>@(ai.Active ? $"{ai.ProviderLabel}, {ai.Model}" : "not connected")</b>.</p>
+        <p>For each lead, the AI sees the lead's details and your workspace's product and ideal customer, then proposes missing fields and writes a short brief: how well the lead fits, why, and one opening line. Nothing is saved until someone accepts it.</p>
+
+        <h2 id="faq">Questions</h2>
+        <h3>Where is the data?</h3>
+        <p>In a Cloudflare D1 database (SQLite at the edge). The web app runs as a Docker container and reaches D1 through a small Cloudflare Worker.</p>
+        <h3>Can I start from scratch?</h3>
+        <p>Yes. The <a href="/setup">setup wizard</a> walks through your business, team, goals, lead sources and AI in about five minutes. The demo data can be replaced at any time.</p>
+        <h3>How do I get notified?</h3>
+        <p>Paste a Slack, Microsoft Teams or Discord incoming-webhook URL under <a href="/settings?tab=sources">Settings, Lead sources</a> and pick the events. Any other HTTPS endpoint receives signed JSON.</p>
+        <h3>Is this demo private?</h3>
+        <p>No. This public demo has no login so anyone can try it; please do not enter real customer data or keys you care about here.</p>
+    </div>
+    </div></article>
+</div>

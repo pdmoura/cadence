@@ -47,9 +47,21 @@ builder.Services.AddScoped<WebhookRepository>();
 builder.Services.AddScoped<LeadPipelineService>();
 builder.Services.AddScoped<EnrichmentService>();
 builder.Services.AddScoped<CurrentMember>();
+builder.Services.AddScoped<SettingsService>();
+
+// Suggestions: fast rules always; AI research once a provider and API key are connected in Settings (never from env vars).
+builder.Services.AddSingleton<SecretBox>();
+builder.Services.AddHttpClient("openrouter", http => http.Timeout = TimeSpan.FromSeconds(60));
+builder.Services.AddScoped<AiClient>();
 builder.Services.AddScoped<IEnrichmentProvider, HeuristicEnrichmentProvider>();
-if (!string.IsNullOrWhiteSpace(builder.Configuration["Enrichment:AnthropicApiKey"]))
-    builder.Services.AddHttpClient<IEnrichmentProvider, AnthropicEnrichmentProvider>(http => http.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddScoped<IEnrichmentProvider, LlmEnrichmentProvider>();
+
+// Intake, background work and outbound notifications.
+builder.Services.AddSingleton<BackgroundJobs>();
+builder.Services.AddHostedService<BackgroundJobWorker>();
+builder.Services.AddScoped<NotificationService>();
+builder.Services.AddHttpClient<OutboundSender>(http => http.Timeout = TimeSpan.FromSeconds(10));
+builder.Services.AddScoped<IntakeService>();
 
 var app = builder.Build();
 

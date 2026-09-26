@@ -1,0 +1,41 @@
+@model WorkspaceViewModel
+@{
+    var current = WorkspaceViewModel.Steps[Model.Step - 1];
+    ViewData["Title"] = "Set up Cadence";
+    ViewData["Eyebrow"] = $"Step {Model.Step} of {WorkspaceViewModel.Steps.Length} · about five minutes in total";
+}
+@section Actions {
+    <a class="btn btn-ghost" href="/setup/finish">Skip setup</a>
+}
+
+<div class="wizard">
+    <nav class="steps" aria-label="Setup steps">
+        @foreach (var st in WorkspaceViewModel.Steps)
+        {
+            <a class="@(st.Step == Model.Step ? "is-active" : st.Step < Model.Step ? "is-done" : "")" href="/setup/@st.Step" aria-current="@(st.Step == Model.Step ? "step" : null)">
+                <span class="n">@if (st.Step < Model.Step) { <svg class="ic" viewBox="0 0 24 24" style="width:14px;height:14px;stroke-width:3"><path d="M20 6 9 17l-5-5"/></svg> } else { @st.Step }</span>
+                <span><b>@st.Title</b><span>@st.Hint</span></span>
+            </a>
+        }
+    </nav>
+
+    <div class="stack" style="gap:14px">
+        <div class="card">
+            <div class="card-head"><h2 class="card-title" style="font-size:18px">@current.Title</h2></div>
+            <div class="card-body">
+                @switch (current.Key)
+                {
+                    case "team": await Html.RenderPartialAsync("_Team", Model); break;
+                    case "goals": await Html.RenderPartialAsync("_Goals", Model); break;
+                    case "sources": await Html.RenderPartialAsync("_Sources", Model); break;
+                    case "ai": await Html.RenderPartialAsync("_Ai", Model); break;
+                    default: await Html.RenderPartialAsync("_Workspace", Model); break;
+                }
+            </div>
+        </div>
+        <div class="wizard-foot">
+            @if (Model.Step > 1) { <a class="btn btn-ghost" href="/setup/@(Model.Step - 1)">Back</a> } else { <span></span> }
+            <a class="btn btn-secondary" href="@Model.Next">@(Model.Step == WorkspaceViewModel.Steps.Length ? "Finish" : "Skip this step")</a>
+        </div>
+    </div>
+</div>

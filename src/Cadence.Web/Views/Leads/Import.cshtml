@@ -1,0 +1,50 @@
+@model ImportViewModel
+@{
+    ViewData["Title"] = "Import leads";
+    ViewData["Eyebrow"] = "From a spreadsheet or a CRM export";
+}
+
+<section class="grid grid-main">
+    <div class="card">
+        <div class="card-body" style="padding-top:22px">
+            @if (Model.Created is { } created)
+            {
+                <div class="composer stack" style="gap:6px;margin-bottom:18px;border-style:solid;border-color:var(--qualified)">
+                    <b style="color:var(--ink);font-size:16px">@created lead@(created == 1 ? "" : "s") imported</b>
+                    <span class="muted">@Model.Duplicates duplicate@(Model.Duplicates == 1 ? "" : "s") skipped · @Model.Skipped row@(Model.Skipped == 1 ? "" : "s") without a company skipped · @Model.Suggestions suggestion@(Model.Suggestions == 1 ? "" : "s") queued@(Model.AiActive ? " · AI research running in the background" : "")</span>
+                    <span class="hint">Columns recognised: @string.Join(", ", Model.MappedColumns)</span>
+                    <div class="chips" style="margin-top:6px"><a class="btn btn-primary btn-sm" href="/leads?pending=true">Review suggestions</a><a class="btn btn-ghost btn-sm" href="/leads">All leads</a></div>
+                </div>
+            }
+            @if (Model.Error is not null)
+            {
+                <div class="composer" style="margin-bottom:18px;border-style:solid;border-color:var(--dq);color:var(--dq-ink)">@Model.Error</div>
+            }
+
+            <form method="post" enctype="multipart/form-data" class="stack" style="gap:16px" data-loading>
+                @Html.AntiForgeryToken()
+                <div class="field">
+                    <label for="file">CSV file</label>
+                    <input id="file" name="file" type="file" accept=".csv,text/csv" class="input" style="padding:8px 12px;height:auto" required />
+                    <span class="hint">Up to 200 rows and 2 MB. Comma or semicolon separated. The first row must be the column names.</span>
+                </div>
+                <div class="form-actions" style="justify-content:flex-start"><button class="btn btn-primary" type="submit"><span>Import</span></button></div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-head"><h2 class="card-title">Columns Cadence understands</h2></div>
+        <div class="card-body">
+            <div class="stack" style="gap:8px;font-size:13.5px">
+                <div><b style="color:var(--ink)">company</b> <span class="muted">(required) company name, organization, account</span></div>
+                <div><b style="color:var(--ink)">contact name</b> <span class="muted">or first name + last name</span></div>
+                <div><b style="color:var(--ink)">title</b> <span class="muted">job title, position, role</span></div>
+                <div><b style="color:var(--ink)">email, phone</b> <span class="muted">work email, mobile, whatsapp</span></div>
+                <div><b style="color:var(--ink)">website</b> <span class="muted">domain or URL</span></div>
+                <div><b style="color:var(--ink)">industry, country, employees, notes</b></div>
+            </div>
+            <a class="btn btn-secondary btn-sm" style="margin-top:16px" href="/leads/import/template.csv">Download template</a>
+        </div>
+    </div>
+</section>

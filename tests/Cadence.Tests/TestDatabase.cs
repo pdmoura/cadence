@@ -18,9 +18,10 @@ public sealed class TestDatabase : IAsyncDisposable
         var dir = FindMigrations();
         if (!seed)
         {
-            // Apply only the schema migration by pointing the runner at a temp folder with the first file.
+            // Everything except the demo data: copy every migration but the seed into a temp folder.
             var tmp = Directory.CreateTempSubdirectory("cadence-mig-");
-            File.Copy(System.IO.Path.Combine(dir, "0001_init.sql"), System.IO.Path.Combine(tmp.FullName, "0001_init.sql"));
+            foreach (var f in Directory.GetFiles(dir, "*.sql").Where(f => !f.EndsWith("_seed.sql")))
+                File.Copy(f, System.IO.Path.Combine(tmp.FullName, System.IO.Path.GetFileName(f)));
             dir = tmp.FullName;
         }
         await new MigrationRunner(cs, dir, NullLogger<MigrationRunner>.Instance).ApplyAsync();

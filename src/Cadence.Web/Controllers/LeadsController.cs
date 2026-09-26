@@ -31,9 +31,20 @@ public sealed class LeadFormViewModel
     public required IReadOnlyList<Member> Members { get; init; }
 }
 
+public sealed class ImportViewModel
+{
+    public int? Created { get; init; }
+    public int Duplicates { get; init; }
+    public int Skipped { get; init; }
+    public int Suggestions { get; init; }
+    public IReadOnlyList<string> MappedColumns { get; init; } = [];
+    public string? Error { get; init; }
+    public bool AiActive { get; init; }
+}
+
 [Route("leads")]
 public sealed class LeadsController(LeadRepository leads, SuggestionRepository suggestions, ActivityRepository activities, MemberRepository members,
-    LeadPipelineService pipeline, EnrichmentService enrichment, CurrentMember current) : Controller
+    LeadPipelineService pipeline, EnrichmentService enrichment, IntakeService intake, AiClient claude, NotificationService notifications, CurrentMember current) : Controller
 {
     [HttpGet("")]
     public async Task<IActionResult> Index(string? q, string? stage, long? owner, bool pending = false)
@@ -54,6 +65,7 @@ public sealed class LeadsController(LeadRepository leads, SuggestionRepository s
     {
         var lead = await leads.FindAsync(id);
         if (lead is null) return NotFound();
+        ViewData["Ai"] = await claude.StatusAsync();
         return View(new LeadDetailViewModel
         {
             Lead = lead,
@@ -76,10 +88,15 @@ public sealed class LeadsController(LeadRepository leads, SuggestionRepository s
         if (!string.IsNullOrWhiteSpace(input.Email) && !input.Email.Contains('@')) ModelState.AddModelError(nameof(input.Email), "That does not look like an email.");
         if (!ModelState.IsValid) return View("Form", new LeadFormViewModel { Input = input, Members = await members.AllAsync() });
 
-        var id = await leads.CreateAsync(input, await current.IdAsync(), "manual");
-        var proposals = await enrichment.ProposeAsync(id);
-        TempData["toast"] = proposals > 0 ? $"Lead created. {proposals} suggestion(s) are waiting for your review." : "Lead created.";
-        return RedirectToAction(nameof(Details), new { id });
+        var result = await intake.CreateAsync(input, "manual", await current.IdAsync());
+        if (result.Status == "duplicate")
+        {
+            TempData["error"] = "A lead with that email already exists, so it was not created again.";
+            return RedirectToAction(nameof(Details), new { id = result.LeadId });
+        }
+        var ai = (await claude.StatusAsync()).Active;
+        TempData["toast"] = (result.Suggestions > 0 ? $"Lead created. {result.Suggestions} suggestion(s) to review." : "Lead created.") + (ai ? " AI research is running in the background." : "");
+        return RedirectToAction(nameof(Details), new { id = result.LeadId });
     }
 
     [HttpGet("{id:long}/edit")]
@@ -114,8 +131,16 @@ public sealed class LeadsController(LeadRepository leads, SuggestionRepository s
     {
         try
         {
-            await pipeline.MoveAsync(id, Stages.ParseStage(to), await current.IdAsync(), reason);
-            TempData["toast"] = $"Moved to {Stages.ParseStage(to).Label()}.";
+            var stage = Stages.ParseStage(to);
+            await pipeline.MoveAsync(id, stage, await current.IdAsync(), reason);
+            TempData["toast"] = $"Moved to {stage.Label()}.";
+            if (stage is Stage.Qualified or Stage.Disqualified && await leads.FindAsync(id) is { } l)
+            {
+                var who = (await current.GetAsync())?.Name ?? "Someone";
+                await notifications.NotifyAsync(stage == Stage.Qualified ? "lead.qualified" : "lead.disqualified",
+                    stage == Stage.Qualified ? $"*{l.Company}* was qualified by {who}. Ready for sales." : $"*{l.Company}* was disqualified by {who}: {reason}",
+                    new { leadId = id, company = l.Company, stage = stage.Key(), by = who, reason });
+            }
         }
         catch (PipelineException ex) { TempData["error"] = ex.Message; }
         return RedirectToAction(nameof(Details), new { id });
@@ -135,9 +160,60 @@ public sealed class LeadsController(LeadRepository leads, SuggestionRepository s
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Enrich(long id)
     {
-        var added = await enrichment.ProposeAsync(id);
-        TempData["toast"] = added > 0 ? $"{added} new suggestion(s) to review." : "Nothing new to suggest: the fields we can infer are already filled or pending.";
+        try
+        {
+            var ai = (await claude.StatusAsync()).Active;
+            var added = await enrichment.ProposeAsync(id, includeSlow: true, HttpContext.RequestAborted);
+            TempData["toast"] = added > 0
+                ? $"{added} new suggestion(s) to review{(ai ? ", including AI research" : "")}."
+                : ai ? "The rules and the AI found nothing new to suggest." : "Nothing new from the rules. Connect an AI provider in Settings for research briefs.";
+        }
+        catch (AiException ex) { TempData["error"] = ex.Message; }
         return RedirectToAction(nameof(Details), new { id });
+    }
+
+    [HttpGet("import")]
+    public async Task<IActionResult> Import() => View(new ImportViewModel { AiActive = (await claude.StatusAsync()).Active });
+
+    [HttpGet("import/template.csv")]
+    public IActionResult ImportTemplate() => File(System.Text.Encoding.UTF8.GetBytes(
+        "company,contact name,title,email,phone,website,industry,country,employees,notes\n" +
+        "Harbor Point Dental,Dr. Elena Ruiz,Owner,elena@harborpointdental.com,+1 206 555 0142,harborpointdental.com,Healthcare,United States,14,Met at the Seattle dental expo\n"),
+        "text/csv", "cadence-leads-template.csv");
+
+    /// <summary>
+    /// CSV import: headers from HubSpot, Apollo, Sales Navigator or a hand-made sheet are recognised by name.
+    /// Rows without a company are skipped, known emails are skipped as duplicates. Capped at 200 rows per file.
+    /// </summary>
+    [HttpPost("import")]
+    [ValidateAntiForgeryToken]
+    [RequestSizeLimit(2_000_000)]
+    public async Task<IActionResult> Import(IFormFile? file)
+    {
+        var ai = (await claude.StatusAsync()).Active;
+        if (file is null || file.Length == 0) return View(new ImportViewModel { Error = "Choose a .csv file first.", AiActive = ai });
+        using var reader = new StreamReader(file.OpenReadStream());
+        var rows = Csv.Parse(await reader.ReadToEndAsync());
+        if (rows.Count < 2) return View(new ImportViewModel { Error = "The file needs a header row and at least one lead.", AiActive = ai });
+
+        var map = Csv.MapHeaders(rows[0]);
+        if (!map.ContainsKey("company"))
+            return View(new ImportViewModel { Error = "No company column found. Name one of the columns \"company\" (the template shows every supported name).", AiActive = ai });
+
+        var known = await leads.EmailsAsync();
+        int created = 0, duplicates = 0, skipped = 0, proposals = 0;
+        foreach (var row in rows.Skip(1).Take(200))
+        {
+            var input = Csv.ToLead(row, map);
+            if (input is null) { skipped++; continue; }
+            if (input.Email is { } e && !known.Add(e.ToLowerInvariant())) { duplicates++; continue; }
+            var result = await intake.CreateAsync(input, "csv", await current.IdAsync());
+            if (result.Status == "duplicate") { duplicates++; continue; }
+            created++;
+            proposals += result.Suggestions;
+        }
+        skipped += Math.Max(0, rows.Count - 1 - 200);
+        return View(new ImportViewModel { Created = created, Duplicates = duplicates, Skipped = skipped, Suggestions = proposals, MappedColumns = map.Keys.ToList(), AiActive = ai });
     }
 
     [HttpPost("{id:long}/suggestions/{suggestionId:long}")]

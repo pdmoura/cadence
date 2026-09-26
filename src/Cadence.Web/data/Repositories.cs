@@ -11,6 +11,17 @@ public sealed class MemberRepository(ISqlExecutor db)
     public async Task<Member?> FindAsync(long id) =>
         (await db.QueryAsync("SELECT id, name, email, role, timezone FROM members WHERE id = ?", id)).Select(Map).FirstOrDefault();
 
+    public Task<long> AddAsync(string name, string email, MemberRole role, string timezone) =>
+        db.InsertAsync("INSERT INTO members (name, email, role, timezone) VALUES (?, ?, ?, ?)",
+            name.Trim(), email.Trim().ToLowerInvariant(), RoleKey(role), string.IsNullOrWhiteSpace(timezone) ? "UTC" : timezone.Trim());
+
+    public Task<int> RemoveAsync(long id) => db.ExecuteAsync("DELETE FROM members WHERE id = ?", id);
+
+    public async Task<bool> EmailTakenAsync(string email) =>
+        (await db.QueryAsync("SELECT 1 FROM members WHERE email = ? COLLATE NOCASE", email.Trim())).Count > 0;
+
+    public static string RoleKey(MemberRole role) => role switch { MemberRole.TeamLead => "team_lead", MemberRole.Developer => "developer", _ => "sdr" };
+
     internal static Member Map(Row r) => new(
         r.Long("id"), r.Str("name"), r.Str("email"),
         r.Str("role") switch { "team_lead" => MemberRole.TeamLead, "developer" => MemberRole.Developer, _ => MemberRole.Sdr },
@@ -102,6 +113,19 @@ public sealed class LeadRepository(ISqlExecutor db)
         return db.ExecuteAsync($"UPDATE leads SET {column} = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?", typed, id);
     }
 
+    public Task<int> AppendNoteAsync(long id, string text) => db.ExecuteAsync(
+        "UPDATE leads SET notes = CASE WHEN notes IS NULL OR notes = '' THEN ? ELSE notes || char(10) || char(10) || ? END, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?",
+        text, text, id);
+
+    public async Task<Dictionary<long, int>> OpenCountByOwnerAsync() =>
+        (await db.QueryAsync("SELECT owner_id, COUNT(*) AS n FROM leads WHERE owner_id IS NOT NULL AND stage NOT IN ('qualified', 'disqualified') GROUP BY owner_id"))
+        .ToDictionary(r => r.Long("owner_id"), r => r.Int("n"));
+
+    public async Task<HashSet<string>> EmailsAsync() =>
+        (await db.QueryAsync("SELECT lower(email) AS email FROM leads WHERE email IS NOT NULL")).Select(r => r.Str("email")).ToHashSet();
+
+    public async Task<int> CountAsync() => (await db.QueryAsync("SELECT COUNT(*) AS n FROM leads"))[0].Int("n");
+
     public Task<int> SetScoreAsync(long id, int score) =>
         db.ExecuteAsync("UPDATE leads SET score = ? WHERE id = ?", Math.Clamp(score, 0, 100), id);
 
@@ -171,6 +195,9 @@ public sealed class SuggestionRepository(ISqlExecutor db)
 
     public async Task<bool> ExistsPendingAsync(long leadId, string field, string value) =>
         (await db.QueryAsync("SELECT 1 FROM enrichment_suggestions WHERE lead_id = ? AND field = ? AND suggested_value = ? AND status = 'pending' LIMIT 1", leadId, field, value)).Count > 0;
+
+    public async Task<bool> ExistsPendingFieldAsync(long leadId, string field) =>
+        (await db.QueryAsync("SELECT 1 FROM enrichment_suggestions WHERE lead_id = ? AND field = ? AND status = 'pending' LIMIT 1", leadId, field)).Count > 0;
 
     public Task<long> AddAsync(long leadId, string field, string value, string? current, string source, double confidence, string? rationale) =>
         db.InsertAsync("INSERT INTO enrichment_suggestions (lead_id, field, suggested_value, current_value, source, confidence, rationale) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -250,12 +277,16 @@ public sealed class StandupRepository(ISqlExecutor db)
 
 public sealed class WebhookRepository(ISqlExecutor db)
 {
-    public Task<long> LogAsync(string source, string @event, string payload, bool signatureValid, string status, string? detail, long? leadId) =>
-        db.InsertAsync("INSERT INTO webhook_deliveries (source, event, payload, signature_valid, status, detail, lead_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            source, @event, payload, signatureValid, status, detail, leadId);
+    public Task<long> LogAsync(string source, string @event, string payload, bool signatureValid, string status, string? detail, long? leadId, string direction = "inbound") =>
+        db.InsertAsync("INSERT INTO webhook_deliveries (source, event, payload, signature_valid, status, detail, lead_id, direction) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            source, @event, payload, signatureValid, status, detail, leadId, direction);
+
+    public async Task<Dictionary<string, (int Count, DateTimeOffset Last)>> InboundBySourceAsync() =>
+        (await db.QueryAsync("SELECT source, COUNT(*) AS n, MAX(received_at) AS last FROM webhook_deliveries WHERE direction = 'inbound' AND status = 'accepted' GROUP BY source"))
+        .ToDictionary(r => r.Str("source"), r => (r.Int("n"), r.Time("last")));
 
     public async Task<IReadOnlyList<WebhookDelivery>> RecentAsync(int limit) =>
-        (await db.QueryAsync("SELECT id, source, event, payload, signature_valid, status, detail, lead_id, received_at FROM webhook_deliveries ORDER BY received_at DESC, id DESC LIMIT ?", limit))
-        .Select(r => new WebhookDelivery(r.Long("id"), r.Str("source"), r.Str("event"), r.Str("payload"), r.Bool("signature_valid"), r.Str("status"), r.StrOrNull("detail"), r.LongOrNull("lead_id"), r.Time("received_at")))
+        (await db.QueryAsync("SELECT id, source, event, payload, signature_valid, status, detail, lead_id, received_at, direction FROM webhook_deliveries ORDER BY received_at DESC, id DESC LIMIT ?", limit))
+        .Select(r => new WebhookDelivery(r.Long("id"), r.Str("source"), r.Str("event"), r.Str("payload"), r.Bool("signature_valid"), r.Str("status"), r.StrOrNull("detail"), r.LongOrNull("lead_id"), r.Time("received_at"), r.Str("direction")))
         .ToList();
 }

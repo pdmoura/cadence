@@ -28,8 +28,16 @@ Containers cannot bind D1 directly. The Worker exposes `/internal/d1/query` and 
 
 ## 7. No frontend build step
 
-One stylesheet with design tokens, one 40-line script for progressive enhancement. Razor renders everything server-side; forms work without JavaScript. For a tool the SDR team will change often, fewer moving parts beats a component framework.
+One stylesheet with design tokens (light and dark), one small script for progressive enhancement (accessible dropdowns, theme switch, copy buttons). Razor renders everything server-side; forms work without JavaScript. For a tool the SDR team will change often, fewer moving parts beats a component framework.
 
 ## 8. Free-plan production: app on Render, data on D1
 
 Cloudflare Containers need the Workers Paid plan; Workers and D1 do not. The app therefore runs as a Docker service on Render's free tier and reaches D1 through the Worker, which is now a pure data bridge (`worker/src/proxy.ts`). Render's free disk is ephemeral, so keeping the database in D1 is a requirement, not a preference. The all-Cloudflare topology still exists as `wrangler.containers.jsonc`; both share `worker/src/d1.ts`, so the bridge the app talks to is the same code either way. The token check uses a constant-time comparison.
+
+## 9. One intake path for every lead source
+
+Website forms, Zapier/Make/n8n, CSV imports, signed webhooks and manual entry all call `IntakeService.CreateAsync`. De-duplication, round-robin assignment by open-lead count, suggestion rules, background AI research and notifications therefore behave the same no matter where a lead came from, and each is tested once. No-code tools authenticate with an intake key (`X-Cadence-Key` or the `/intake/{key}` URL) because they cannot compute an HMAC; developers keep the signed webhook.
+
+## 10. Bring-your-own AI key, stored encrypted, never from the environment
+
+The team chooses the provider (Anthropic or OpenRouter) and pastes its own key in Settings. Keys are encrypted with AES-256-GCM using a key derived from a server secret, displayed only as the last four characters, and the AI client never falls back to `ANTHROPIC_API_KEY` or other ambient credentials. That makes the cost owner explicit and prevents a deployment from silently spending someone else's quota. Anthropic calls use the official SDK with structured outputs; OpenRouter uses its JSON-schema response format with a plain-JSON retry for models that do not support schemas. Slow AI work for automated intake runs on an in-process background queue so a form submission never waits on a model.

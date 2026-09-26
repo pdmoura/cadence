@@ -18,11 +18,19 @@ public sealed class DashboardViewModel
     public required Standup? MyStandup { get; init; }
     public required int StandupsToday { get; init; }
     public required int TeamSize { get; init; }
+    public int SdrCount { get; init; }
+    public required WorkspaceSettings Settings { get; init; }
+    public required AiStatus Ai { get; init; }
+    public required IReadOnlyList<ChecklistItem> Checklist { get; init; }
+    public bool ChecklistDone => Checklist.All(c => c.Done);
     public string Today => DateTime.UtcNow.ToString("yyyy-MM-dd");
     public int TotalOpen => ByStage.Where(kv => kv.Key is not (Stage.Qualified or Stage.Disqualified)).Sum(kv => kv.Value);
 }
 
-public sealed class DashboardController(LeadRepository leads, SuggestionRepository suggestions, ActivityRepository activities, StandupRepository standups, MemberRepository members, CurrentMember current) : Controller
+public sealed record ChecklistItem(string Title, string Hint, string Href, string Action, bool Done);
+
+public sealed class DashboardController(LeadRepository leads, SuggestionRepository suggestions, ActivityRepository activities, StandupRepository standups,
+    MemberRepository members, WebhookRepository webhooks, SettingsService settings, AiClient claude, CurrentMember current) : Controller
 {
     [HttpGet("/")]
     public async Task<IActionResult> Index()
@@ -31,11 +39,28 @@ public sealed class DashboardController(LeadRepository leads, SuggestionReposito
         var today = DateTime.UtcNow.ToString("yyyy-MM-dd");
         var weekAgo = DateTimeOffset.UtcNow.AddDays(-7);
         var transitions = await leads.TransitionsSinceAsync(weekAgo);
-        var (pending, _, _) = await suggestions.CountsAsync();
+        var (pending, accepted, rejected) = await suggestions.CountsAsync();
         var team = await members.AllAsync();
+        var ws = await settings.GetAsync();
+        var ai = await claude.StatusAsync();
+        var myStandup = me is null ? null : await standups.FindAsync(me.Id, today);
+        var sources = await webhooks.InboundBySourceAsync();
+
+        var checklist = new List<ChecklistItem>
+        {
+            new("Describe your business", "What you sell and your ideal customer. The AI uses it to judge fit.", "/setup/1", "Open setup", ws.HasProfile),
+            new("Add your team", "SDRs, a team lead, anyone who posts a stand-up.", "/settings?tab=team", "Add people", team.Count >= 2),
+            new("Connect a lead source", "A website form, Zapier, a CSV, or a test lead.", "/automations", "Connect", sources.Keys.Any(k => k != "unknown")),
+            new("Review a suggestion", "Accept or reject what the rules and the AI propose.", "/leads?pending=true", "Review", accepted + rejected > 0),
+            new("Post today's stand-up", "Five questions before the daily meeting.", "/standups", "Post", myStandup is not null),
+            new("Connect an AI provider", "Paste your Anthropic or OpenRouter key to get research briefs. Optional.", "/settings?tab=ai", "Connect", ai.Active),
+        };
 
         return View(new DashboardViewModel
         {
+            Settings = ws,
+            Ai = ai,
+            Checklist = checklist,
             Me = me,
             ByStage = await leads.CountByStageAsync(),
             PendingSuggestions = pending,
@@ -44,9 +69,10 @@ public sealed class DashboardController(LeadRepository leads, SuggestionReposito
             QualifiedThisWeek = transitions.Where(t => t.To == Stage.Qualified).Sum(t => t.Count),
             NeedsReview = (await leads.ListAsync(new LeadFilter(PendingOnly: true))).Take(6).ToList(),
             Recent = await activities.RecentAsync(8),
-            MyStandup = me is null ? null : await standups.FindAsync(me.Id, today),
+            MyStandup = myStandup,
             StandupsToday = (await standups.ForDayAsync(today)).Count,
             TeamSize = team.Count,
+            SdrCount = team.Count(m => m.Role == MemberRole.Sdr),
         });
     }
 

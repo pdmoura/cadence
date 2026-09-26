@@ -10,24 +10,53 @@ ASP.NET Core MVC · C# 13 / .NET 10 · SQLite locally, Cloudflare D1 in producti
 
 ![Dashboard](docs/screenshots/dashboard.png)
 
-## Why this exists
+## Who it is for
 
-Sales-development teams lose hours to the same three things: researching leads by hand, re-typing what happened into a CRM, and writing the daily update for management. Cadence is a small internal tool that attacks each one without pretending a model can replace judgement:
+Cadence is the daily workbench for a sales-development (SDR) team: the people who find companies worth talking to, check that the contact is real, reach out, and hand qualified conversations to sales. A typical day:
 
-- **Pipeline with rules.** Leads move `New → Researching → Validated → Contacted → Qualified` (or `Disqualified`). Every move is an audit event, and the reports are computed from those events, not from mutable rows.
-- **AI with human validation.** Rule-based and (optionally) LLM providers *propose* values for empty fields: website from the email domain, industry from the company name, phone normalisation, country from the TLD. A person accepts or rejects each proposal. A lead cannot be validated while anything is still pending.
-- **Daily accountability.** Each member answers five questions every morning. The Team Lead gets a plain-text management report generated from those answers plus the day's pipeline numbers: metrics, blockers, decisions needed.
-- **Automations.** A signed inbound webhook (HMAC-SHA256 over the raw body) takes leads from website forms and ad platforms, de-duplicates by email, queues enrichment, and logs every delivery, including the rejected ones.
+1. **Stand-up.** Everyone answers five questions (yesterday, today, the number they are chasing, blockers, help needed). The team lead gets a management report generated from the answers and the day's pipeline numbers, and can send it to Slack with one click.
+2. **Review suggestions.** New leads arrive from website forms, Zapier/Make/n8n or a CSV. Rules propose missing details; an AI model, if connected, writes a research brief with a fit rating and an opening line. A person accepts or rejects each suggestion.
+3. **Research, validate, reach out.** Leads move `New → Researching → Validated → Contacted → Qualified` (or `Disqualified` with a reason). Every move is an audit event and every touch is logged.
+4. **Measure.** Goals for daily touches and weekly validated/qualified leads show as progress bars; reports are computed from the audit trail.
 
-| Leads | Lead detail with suggestions |
+A first-run **setup wizard** (business and ideal customer, team, goals, lead sources, AI) and an in-app **Guide** make the workflow explicit. Light and dark themes follow the system or a per-device choice.
+
+| Leads | Lead detail with suggestions (dark) |
 | --- | --- |
 | ![Leads](docs/screenshots/leads.png) | ![Lead detail](docs/screenshots/lead-detail.png) |
 
-| Stand-ups and management report | Reports |
+| Automations | Setup wizard |
 | --- | --- |
-| ![Stand-ups](docs/screenshots/standups.png) | ![Reports](docs/screenshots/reports.png) |
+| ![Automations](docs/screenshots/automations.png) | ![Setup](docs/screenshots/setup-wizard.png) |
 
-The UI is a single hand-written stylesheet (no build step) and works on phones: [dashboard](docs/screenshots/mobile-dashboard.png), [lead](docs/screenshots/mobile-lead.png).
+| Stand-ups and management report | AI settings |
+| --- | --- |
+| ![Stand-ups](docs/screenshots/standups.png) | ![AI settings](docs/screenshots/settings-ai.png) |
+
+The UI is one hand-written stylesheet and a small script (no build step), with accessible custom dropdowns, and it works on phones: [dashboard](docs/screenshots/mobile-dashboard.png), [lead](docs/screenshots/mobile-lead.png), [dark dashboard](docs/screenshots/dashboard-dark.png).
+
+## Getting leads in
+
+Every source goes through one intake service: de-duplicate by email, assign to the SDR with the fewest open leads (optional), run the suggestion rules, queue AI research in the background, notify the team channel.
+
+| Source | For whom | How |
+| --- | --- | --- |
+| Website form | No-code | Point any HTML form at `/intake/{key}`. Honeypot field and thank-you redirect built in. |
+| Zapier, Make, n8n | No-code | One web-request step to `/webhooks/leads` with the `X-Cadence-Key` header. |
+| CSV import | Anyone | Upload exports from HubSpot, Apollo, Sales Navigator or Excel; headers are matched by name. |
+| Signed webhook | Developers | `X-Cadence-Signature: sha256=HMAC(secret, raw body)`, constant-time verified. |
+| Notifications | Everyone | Slack, Teams or Discord incoming webhooks get chat messages; other HTTPS endpoints get signed JSON. |
+
+Setup guides with copy-paste snippets live on the Automations page and in [docs/AUTOMATIONS.md](docs/AUTOMATIONS.md).
+
+## AI research (optional, bring your own key)
+
+Cadence works fully without AI. To add research briefs, open **Settings, AI**, choose a provider and paste your own API key:
+
+- **Anthropic**: Claude models (Opus 5 by default, Sonnet 5 or Haiku 4.5 selectable) through the official Anthropic .NET SDK, with structured outputs. Opus 5 requests include a server-side refusal fallback.
+- **OpenRouter**: one key for many model families (Claude, GPT, Gemini, Llama and others) through its chat-completions API with a JSON schema.
+
+Keys are encrypted with AES-GCM before they reach the database, shown only by their last four characters, and never read from environment variables, so a server's own credentials are never used by accident. The prompt includes the lead's details and the workspace's product, ideal customer and markets; the answer is only ever a suggestion that a person accepts or rejects.
 
 ## Architecture
 
@@ -53,12 +82,13 @@ Code map:
 ```
 src/Cadence.Web/
   Data/         ISqlExecutor, SqliteSqlExecutor, D1WorkerSqlExecutor, MigrationRunner, Repositories
-  Services/     LeadPipelineService (rules + score), Enrichment (providers + review), StandupReportBuilder, WebhookSignature
-  Controllers/  Dashboard, Leads, Standups, Automations (+ /webhooks/leads), Reports
+  Services/     LeadPipelineService (rules + score), Enrichment (rules + LLM providers, review), AiClient (Anthropic SDK / OpenRouter),
+                Intake (dedupe, assign, CSV), Notifications, BackgroundJobs, Settings, SecretBox, StandupReportBuilder, WebhookSignature
+  Controllers/  Dashboard, Leads (+ CSV import), Standups, Automations (+ /webhooks/leads, /intake/{key}), Reports, Workspace (settings + wizard), Guide
   Views/        Razor views, one layout, one stylesheet
-db/migrations/  0001_init.sql (schema + indexes), 0002_seed.sql (demo data)
+db/migrations/  0001_init.sql (schema + indexes), 0002_seed.sql (demo data), 0003_workspace_settings.sql
 worker/         Cloudflare Worker: D1 proxy + Container routing, wrangler.jsonc
-tests/          xUnit: pipeline rules, enrichment, webhook signature, report builder, HTTP end-to-end
+tests/          xUnit (29): pipeline rules, enrichment, intake, CSV, key encryption, webhooks, form intake, pages end-to-end
 ```
 
 ## Run it
@@ -85,13 +115,13 @@ Open http://localhost:8080. The database is created and seeded on first start. S
 dotnet test
 ```
 
-**Webhook**
+**Webhooks and forms**
 
-The Automations page prints a ready-to-run `curl` with a valid signature for the configured secret (`Webhooks:Secret`, default `dev-only-change-me`).
+The Automations page prints ready-to-run snippets: an HTML form, a `curl` with your intake key, and a `curl` with a valid HMAC signature for `Webhooks:Secret`.
 
-**Optional LLM enrichment**
+**Secrets**
 
-Set `Enrichment__AnthropicApiKey` (and optionally `Enrichment__Model`). The provider asks for strict JSON, validates the fields it gets back, and still only produces suggestions for review. Without the key, the rule-based provider runs alone.
+`Webhooks:Secret` signs and verifies webhooks. `Secrets:Key` (falls back to `Webhooks:Secret`) derives the key that encrypts AI provider keys in the database; changing it means re-entering the AI key in Settings.
 
 ## Deploy (free): Cloudflare Worker + D1, app on Render
 

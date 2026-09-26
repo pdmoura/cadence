@@ -1,0 +1,50 @@
+@model WorkspaceViewModel
+@{ var s = Model.Settings; }
+<div class="stack" style="gap:22px">
+    <div class="stack" style="gap:8px">
+        <label class="field" for="intake-url" style="margin:0"><span style="font-weight:600;color:var(--ink)">Your intake address</span></label>
+        <div class="copy-row">
+            <input id="intake-url" class="input" readonly value="@Model.BaseUrl/intake/@s.IntakeKey" />
+            <button class="btn btn-secondary" type="button" data-copy="#intake-url">Copy</button>
+        </div>
+        <p class="hint">Point a website form here, or send it from Zapier, Make or n8n. Step-by-step guides are on the <a class="card-link" href="/automations">Automations</a> page.</p>
+        <form method="post" action="/settings/sources/rotate-key" data-confirm="Create a new key? Forms and Zapier steps using the old one stop working." class="inline-form">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="next" value="@Model.Here" />
+            <button class="btn btn-ghost btn-sm" type="submit">Create a new key</button>
+        </form>
+    </div>
+
+    <form method="post" action="/settings/sources" class="stack" style="gap:6px">
+        @Html.AntiForgeryToken()
+        <input type="hidden" name="next" value="@Model.Next" />
+        <label class="switch"><input type="checkbox" name="autoAssign" value="true" checked="@s.AutoAssign" /><span><b>Assign new leads automatically</b><span>Each lead from a form, Zapier or CSV goes to the SDR with the fewest open leads.</span></span></label>
+        <label class="switch"><input type="checkbox" name="autoEnrich" value="true" checked="@s.AutoEnrich" /><span><b>Suggest missing details</b><span>Rules fill in website, industry and phone format for review. AI research runs too when a provider is connected.</span></span></label>
+
+        <div class="field" id="notifications" style="margin-top:14px">
+            <label for="outboundUrl">Notify a channel <span class="hint">optional</span></label>
+            <input id="outboundUrl" name="outboundUrl" class="input" value="@s.OutboundUrl" placeholder="https://hooks.slack.com/services/..." inputmode="url" />
+            <span class="hint">A Slack, Microsoft Teams or Discord incoming-webhook URL, or any HTTPS endpoint (it receives signed JSON).</span>
+        </div>
+        <div class="chips" role="group" aria-label="Events to send" style="margin-top:6px">
+            @foreach (var (key, label) in new[] { ("lead.created", "New lead"), ("lead.qualified", "Lead qualified"), ("lead.disqualified", "Lead disqualified"), ("report.daily", "Daily report") })
+            {
+                <label class="toggle @(s.OutboundEvents.Contains(key) ? "is-on" : "")" style="height:36px;cursor:pointer"><input type="checkbox" name="outboundEvents" value="@key" checked="@s.OutboundEvents.Contains(key)" style="accent-color:var(--brand)" onchange="this.parentElement.classList.toggle('is-on', this.checked)" />@label</label>
+            }
+        </div>
+        <div class="form-actions" style="margin-top:12px"><button class="btn btn-primary" type="submit">@(Model.IsWizard ? "Save and continue" : "Save")</button></div>
+    </form>
+
+    @if (Model.IsWizard)
+    {
+        <div class="composer stack" style="gap:10px">
+            <b style="color:var(--ink)">See it work now</b>
+            <p class="muted">Create a sample lead through the same path a real form uses: it is de-duplicated, assigned and gets suggestions.</p>
+            <form method="post" action="/automations/test-lead">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="returnUrl" value="@Model.Here" />
+                <button class="btn btn-secondary btn-sm" type="submit">Send a test lead</button>
+            </form>
+        </div>
+    }
+</div>

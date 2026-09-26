@@ -1,0 +1,37 @@
+@model WorkspaceViewModel
+<div class="stack" style="gap:18px">
+    <div>
+        @foreach (var m in Model.Members)
+        {
+            <div class="member-row">
+                <span class="avatar" aria-hidden="true">@m.Initials</span>
+                <div class="grow"><b>@m.Name</b><span>@m.Email · @m.Timezone</span></div>
+                <span class="badge @(m.Role == MemberRole.TeamLead ? "badge-brand" : m.Role == MemberRole.Sdr ? "badge-neutral" : "badge-contacted")">@m.RoleLabel</span>
+                <form method="post" action="/settings/team/@m.Id/remove" class="inline-form" data-confirm="Remove @m.Name from the team? Their leads become unassigned.">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="next" value="@Model.Here" />
+                    <button class="btn btn-ghost btn-sm" type="submit" aria-label="Remove @m.Name">Remove</button>
+                </form>
+            </div>
+        }
+    </div>
+
+    <form method="post" action="/settings/team/add" class="composer form-grid">
+        @Html.AntiForgeryToken()
+        <input type="hidden" name="next" value="@Model.Here" />
+        <div class="field"><label for="m-name">Name</label><input id="m-name" name="name" class="input" required /></div>
+        <div class="field"><label for="m-email">Work email</label><input id="m-email" name="email" type="email" class="input" required /></div>
+        <div class="field"><label for="m-role">Role</label>
+            <select id="m-role" name="role" class="select">
+                <option value="sdr" data-sub="Researches, validates and contacts leads">SDR</option>
+                <option value="team_lead" data-sub="Runs the daily meeting and reports to management">Team Lead</option>
+                <option value="developer" data-sub="Builds automations and integrations">Developer</option>
+            </select>
+        </div>
+        <div class="field"><label for="m-tz">Time zone</label>
+            <select id="m-tz" name="timezone" class="select">@foreach (var tz in WorkspaceViewModel.Timezones) { <option value="@tz">@tz.Replace("_", " ")</option> }</select>
+        </div>
+        <div class="form-actions span-2"><button class="btn btn-secondary" type="submit">Add to team</button></div>
+    </form>
+    <p class="hint">New leads from forms, Zapier and CSV are shared out to SDRs automatically, lightest workload first.</p>
+</div>

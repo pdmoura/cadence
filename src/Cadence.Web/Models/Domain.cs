@@ -94,6 +94,7 @@ public sealed record Suggestion(
         "contact_title" => "Contact title",
         "email" => "Email",
         "phone" => "Phone",
+        "research_brief" => "Research brief",
         _ => Field,
     };
 }
@@ -102,4 +103,4 @@ public sealed record Activity(long Id, long LeadId, long? MemberId, string? Memb
 
 public sealed record Standup(long Id, long MemberId, string MemberName, string MemberRole, string Day, string Yesterday, string Today, string Metric, string Blockers, string HelpNeeded, DateTimeOffset UpdatedAt);
 
-public sealed record WebhookDelivery(long Id, string Source, string Event, string Payload, bool SignatureValid, string Status, string? Detail, long? LeadId, DateTimeOffset ReceivedAt);
+public sealed record WebhookDelivery(long Id, string Source, string Event, string Payload, bool SignatureValid, string Status, string? Detail, long? LeadId, DateTimeOffset ReceivedAt, string Direction = "inbound");

@@ -15,10 +15,12 @@ public sealed class StandupsViewModel
     public required IReadOnlyList<string> RecentDays { get; init; }
     public required string Report { get; init; }
     public bool IsToday => Day == DateTime.UtcNow.ToString("yyyy-MM-dd");
+    public bool CanSend { get; init; }
 }
 
 [Route("standups")]
-public sealed class StandupsController(StandupRepository standups, MemberRepository members, LeadRepository leads, ActivityRepository activities, SuggestionRepository suggestions, CurrentMember current) : Controller
+public sealed class StandupsController(StandupRepository standups, MemberRepository members, LeadRepository leads, ActivityRepository activities, SuggestionRepository suggestions,
+    CurrentMember current, NotificationService notifications, OutboundSender sender, SettingsService settings) : Controller
 {
     [HttpGet("")]
     public async Task<IActionResult> Index(string? day)
@@ -36,6 +38,7 @@ public sealed class StandupsController(StandupRepository standups, MemberReposit
             Mine = me is null ? null : list.FirstOrDefault(s => s.MemberId == me.Id),
             RecentDays = await standups.RecentDaysAsync(10),
             Report = StandupReportBuilder.Build(day, list, await MetricsAsync(day), team),
+            CanSend = !string.IsNullOrWhiteSpace((await settings.GetAsync()).OutboundUrl),
         });
     }
 
@@ -48,6 +51,18 @@ public sealed class StandupsController(StandupRepository standups, MemberReposit
         if (string.IsNullOrWhiteSpace(today)) { TempData["error"] = "Say what you are going to accomplish today; it is the one line the team reads."; return RedirectToAction(nameof(Index), new { day }); }
         await standups.UpsertAsync(me.Id, Normalize(day), yesterday ?? "", today, metric ?? "", blockers ?? "", help ?? "");
         TempData["toast"] = "Stand-up saved.";
+        return RedirectToAction(nameof(Index), new { day });
+    }
+
+    /// <summary>Posts the day's management report to the notification URL (Slack, Teams, Discord or any endpoint).</summary>
+    [HttpPost("send")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Send(string? day)
+    {
+        day = Normalize(day);
+        var text = StandupReportBuilder.Build(day, await standups.ForDayAsync(day), await MetricsAsync(day), await members.AllAsync());
+        var (ok, message) = await notifications.SendNowAsync(sender, "report.daily", "```\n" + text + "\n```", new { day, report = text });
+        TempData[ok ? "toast" : "error"] = ok ? "Report sent. " + message : message;
         return RedirectToAction(nameof(Index), new { day });
     }
 

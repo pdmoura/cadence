@@ -1,0 +1,13 @@
+@model WorkspaceViewModel
+@{ var s = Model.Settings; }
+<form method="post" action="/settings/goals" class="stack" style="gap:16px">
+    @Html.AntiForgeryToken()
+    <input type="hidden" name="next" value="@Model.Next" />
+    <p class="muted">Goals turn into progress bars on the home page and into the daily report, so everyone knows what "done" means today.</p>
+    <div class="form-grid">
+        <div class="field"><label for="g-touch">Touches per SDR per day</label><input id="g-touch" name="targetDailyTouches" type="number" min="0" max="500" class="input" value="@s.TargetDailyTouches" /><span class="hint">Calls, emails, LinkedIn messages, meetings.</span></div>
+        <div class="field"><label for="g-val">Leads validated per week</label><input id="g-val" name="targetWeeklyValidated" type="number" min="0" max="1000" class="input" value="@s.TargetWeeklyValidated" /><span class="hint">Confirmed real, reachable and a fit.</span></div>
+        <div class="field"><label for="g-q">Leads qualified per week</label><input id="g-q" name="targetWeeklyQualified" type="number" min="0" max="1000" class="input" value="@s.TargetWeeklyQualified" /><span class="hint">Handed to sales with a real conversation behind them.</span></div>
+    </div>
+    <div class="form-actions"><button class="btn btn-primary" type="submit">@(Model.IsWizard ? "Save and continue" : "Save")</button></div>
+</form>
