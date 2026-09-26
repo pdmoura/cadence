@@ -14,8 +14,10 @@ if (Environment.GetEnvironmentVariable("PORT") is { Length: > 0 } port)
 
 builder.Services.AddControllersWithViews();
 
-// Render (and Cloudflare) terminate TLS in front of the app; trust their X-Forwarded-* headers so generated
-// URLs (intake snippets, OAuth callbacks, og:image) use https.
+// Render terminates TLS in front of the app; trust its X-Forwarded-* headers so generated URLs (intake snippets,
+// OAuth callbacks, og:image) use https. Only behind a proxy: Render sets RENDER=true, anywhere else opt in with
+// ForwardedHeaders:Enabled, otherwise any client could claim https or spoof its IP.
+var trustProxy = Environment.GetEnvironmentVariable("RENDER") is "true" || builder.Configuration.GetValue<bool>("ForwardedHeaders:Enabled");
 builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>(o =>
 {
     o.ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto;
@@ -77,13 +79,15 @@ var app = builder.Build();
 if (app.Services.GetService<MigrationRunner>() is { } runner)
     await runner.ApplyAsync();
 
+// First, so error pages and everything after them see the real scheme and client address.
+if (trustProxy) app.UseForwardedHeaders();
+
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/error");
     app.UseStatusCodePagesWithReExecute("/error", "?code={0}");
 }
 
-app.UseForwardedHeaders();
 app.UseRequestLocalization();
 app.UseStaticFiles();
 app.UseRouting();

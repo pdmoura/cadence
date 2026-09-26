@@ -25,4 +25,16 @@ public sealed class CurrentMember(IHttpContextAccessor accessor, MemberRepositor
     }
 
     public async Task<long?> IdAsync() => (await GetAsync())?.Id;
+
+    /// <summary>Today's date where the acting member works, so a stand-up posted at 01:00 in Nairobi files under the local day, not UTC's.</summary>
+    public async Task<DateOnly> TodayAsync()
+    {
+        var now = DateTimeOffset.UtcNow;
+        if ((await GetAsync())?.Timezone is { Length: > 0 } tz)
+        {
+            try { now = TimeZoneInfo.ConvertTime(now, TimeZoneInfo.FindSystemTimeZoneById(tz)); }
+            catch (Exception ex) when (ex is TimeZoneNotFoundException or InvalidTimeZoneException) { }
+        }
+        return DateOnly.FromDateTime(now.DateTime);
+    }
 }

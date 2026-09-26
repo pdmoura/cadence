@@ -275,9 +275,6 @@ public sealed class StandupRepository(ISqlExecutor db)
         (await db.QueryAsync("SELECT day, COUNT(*) AS n FROM standups WHERE day >= ? AND day <= ? GROUP BY day", from, to))
         .ToDictionary(r => r.Str("day"), r => r.Int("n"));
 
-    public async Task<IReadOnlyList<string>> RecentDaysAsync(int limit) =>
-        (await db.QueryAsync("SELECT DISTINCT day FROM standups ORDER BY day DESC LIMIT ?", limit)).Select(r => r.Str("day")).ToList();
-
     private static Standup Map(Row r) => new(r.Long("id"), r.Long("member_id"), r.Str("member_name"), r.Str("member_role"), r.Str("day"),
         r.Str("yesterday"), r.Str("today"), r.Str("metric"), r.Str("blockers"), r.Str("help_needed"), r.Time("updated_at"));
 }

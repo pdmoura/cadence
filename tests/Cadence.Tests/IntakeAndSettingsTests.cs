@@ -4,7 +4,9 @@ using System.Text.Json;
 using Cadence.Web.Data;
 using Cadence.Web.Models;
 using Cadence.Web.Services;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -288,5 +290,94 @@ public sealed class OpenRouterAndCalendarTests : IAsyncLifetime
         var html = await client.GetStringAsync($"/standups?day={day}");
         Assert.Contains("cal-day", html);
         Assert.Contains("is-selected", html);
+    }
+
+    [Fact]
+    public async Task Calendar_paging_lands_on_a_friday_next_to_the_current_range()
+    {
+        var client = _factory.CreateClient();
+        var wednesday = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-60);
+        while (wednesday.DayOfWeek != DayOfWeek.Wednesday) wednesday = wednesday.AddDays(-1);
+        var html = await client.GetStringAsync($"/standups?day={wednesday:yyyy-MM-dd}");
+        var gridStart = wednesday.AddDays(-2 - 14);
+
+        var earlier = DateOnly.ParseExact(Regex.Match(html, @"href=""/standups\?day=([0-9-]{10})"" aria-label=""Earlier weeks""").Groups[1].Value, "yyyy-MM-dd");
+        var later = DateOnly.ParseExact(Regex.Match(html, @"href=""/standups\?day=([0-9-]{10})"" aria-label=""Later weeks""").Groups[1].Value, "yyyy-MM-dd");
+        Assert.Equal(DayOfWeek.Friday, earlier.DayOfWeek);
+        Assert.Equal(gridStart.AddDays(-3), earlier);
+        Assert.Equal(DayOfWeek.Friday, later.DayOfWeek);
+        Assert.Equal(gridStart.AddDays(21 + 18), later);
+    }
+
+    [Theory]
+    [InlineData("<html>Bad gateway</html>")]
+    [InlineData("{\"key\": 42}")]
+    [InlineData("{\"key\": \"ab\"}")]
+    public async Task A_bad_OpenRouter_answer_redirects_with_an_error_instead_of_failing(string body)
+    {
+        var client = WithOpenRouter(body).CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        await client.GetAsync("/settings/ai/openrouter/connect");
+        var cb = await client.GetAsync("/settings/ai/openrouter/callback?code=abc");
+        Assert.Equal(HttpStatusCode.Redirect, cb.StatusCode);
+        Assert.Equal("/settings?tab=ai", cb.Headers.Location!.ToString());
+    }
+
+    [Fact]
+    public async Task A_key_from_OpenRouter_is_saved_encrypted_with_its_hint()
+    {
+        var factory = WithOpenRouter("{\"key\": \"sk-or-v1-0123456789abcdefWXYZ\"}");
+        var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        await client.GetAsync("/settings/ai/openrouter/connect");
+        var cb = await client.GetAsync("/settings/ai/openrouter/callback?code=abc");
+        Assert.Equal(HttpStatusCode.Redirect, cb.StatusCode);
+
+        using var scope = factory.Services.CreateScope();
+        var saved = await scope.ServiceProvider.GetRequiredService<SettingsService>().GetAsync();
+        Assert.Equal("openrouter", saved.AiProvider);
+        Assert.Equal("openrouter/auto", saved.AiModel);
+        Assert.Equal("WXYZ", saved.AiKeyHint);
+        Assert.DoesNotContain("sk-or-v1", saved.AiKeyEncrypted);
+    }
+
+    private WebApplicationFactory<Program> WithOpenRouter(string body) =>
+        _factory.WithWebHostBuilder(b => b.ConfigureTestServices(s =>
+            s.AddHttpClient("openrouter").ConfigurePrimaryHttpMessageHandler(() => new FixedResponse(body))));
+
+    private sealed class FixedResponse(string body) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "application/json") });
+    }
+}
+
+public sealed class SeedMigrationTests
+{
+    [Fact]
+    public async Task Standup_history_seed_skips_members_and_leads_that_were_removed()
+    {
+        var source = TestDatabase.FindMigrations();
+        var dir = Directory.CreateTempSubdirectory("cadence-mig-");
+        foreach (var f in Directory.GetFiles(source, "*.sql").Where(f => !f.EndsWith("0004_standup_history_seed.sql")))
+            File.Copy(f, Path.Combine(dir.FullName, Path.GetFileName(f)));
+        var path = Path.Combine(Path.GetTempPath(), $"cadence-seed-{Guid.NewGuid():N}.db");
+        var cs = SqliteSqlExecutor.BuildConnectionString(path);
+        try
+        {
+            await new MigrationRunner(cs, dir.FullName, NullLogger<MigrationRunner>.Instance).ApplyAsync();
+            var db = new SqliteSqlExecutor(cs);
+            await db.ExecuteAsync("DELETE FROM members WHERE id = 4");
+            await db.ExecuteAsync("DELETE FROM leads WHERE id = 10");
+
+            File.Copy(Path.Combine(source, "0004_standup_history_seed.sql"), Path.Combine(dir.FullName, "0004_standup_history_seed.sql"));
+            await new MigrationRunner(cs, dir.FullName, NullLogger<MigrationRunner>.Instance).ApplyAsync();
+
+            Assert.True((await db.QueryAsync("SELECT COUNT(*) AS n FROM standups"))[0].Int("n") > 40);
+            Assert.Equal(0, (await db.QueryAsync("SELECT COUNT(*) AS n FROM standups WHERE member_id = 4"))[0].Int("n"));
+        }
+        finally
+        {
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            try { File.Delete(path); dir.Delete(true); } catch { }
+        }
     }
 }

@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
@@ -68,48 +69,49 @@ public sealed class WorkspaceController(SettingsService settings, MemberReposito
         var stored = secrets.Unprotect(Request.Cookies[PkceCookie]);
         Response.Cookies.Delete(PkceCookie, new CookieOptions { Path = "/settings/ai/openrouter" });
         var parts = stored?.Split('|', 2);
-        var back = parts is { Length: 2 } && Url.IsLocalUrl(parts[1]) ? parts[1] : "/settings?tab=ai";
+        var next = parts is { Length: 2 } ? parts[1] : "/settings?tab=ai";
         if (parts is not { Length: 2 } || string.IsNullOrWhiteSpace(code))
-        {
-            TempData["error"] = "The OpenRouter sign-in expired or was cancelled. Try again.";
-            return Redirect(back);
-        }
+            return Back("The OpenRouter sign-in expired or was cancelled. Try again.", next, error: true);
 
+        string? key;
         try
         {
             var http = httpFactory.CreateClient("openrouter");
             using var response = await http.PostAsJsonAsync("https://openrouter.ai/api/v1/auth/keys",
                 new { code, code_verifier = parts[0], code_challenge_method = "S256" }, HttpContext.RequestAborted);
             if (!response.IsSuccessStatusCode)
-            {
-                TempData["error"] = $"OpenRouter did not issue a key (HTTP {(int)response.StatusCode}). Try signing in again.";
-                return Redirect(back);
-            }
+                return Back($"OpenRouter did not issue a key (HTTP {(int)response.StatusCode}). Try signing in again.", next, error: true);
             using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(HttpContext.RequestAborted));
-            var key = doc.RootElement.TryGetProperty("key", out var k) ? k.GetString() : null;
-            if (string.IsNullOrWhiteSpace(key))
-            {
-                TempData["error"] = "OpenRouter answered without a key. Try signing in again.";
-                return Redirect(back);
-            }
-
-            var current = await settings.GetAsync();
-            await settings.SetAsync(new()
-            {
-                ["ai_provider"] = "openrouter",
-                ["ai_model"] = current.AiProvider == "openrouter" ? current.AiModel : "openrouter/auto",
-                ["ai_enabled"] = "1",
-                ["ai_key"] = secrets.Protect(key),
-                ["ai_key_hint"] = key[^4..],
-            });
-            TempData["toast"] = "Connected to OpenRouter. Use Test connection to check it.";
+            key = doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("key", out var k) && k.ValueKind == JsonValueKind.String
+                ? k.GetString()?.Trim() : null;
         }
-        catch (HttpRequestException ex)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
         {
             logger.LogWarning(ex, "OpenRouter key exchange failed");
-            TempData["error"] = "Could not reach OpenRouter to finish signing in.";
+            return Back("Could not finish signing in with OpenRouter. Try again.", next, error: true);
         }
-        return Redirect(back);
+        if (!LooksLikeKey(key))
+            return Back("OpenRouter answered without a usable key. Try signing in again.", next, error: true);
+
+        var saved = await settings.GetAsync();
+        var values = new Dictionary<string, string?>
+        {
+            ["ai_provider"] = "openrouter",
+            ["ai_model"] = AiClient.NormalizeModel("openrouter", saved.AiProvider == "openrouter" ? saved.AiModel : null),
+            ["ai_enabled"] = "1",
+        };
+        StoreKey(values, key);
+        await settings.SetAsync(values);
+        return Back("Connected to OpenRouter. Use Test connection to check it.", next);
+    }
+
+    private static bool LooksLikeKey([NotNullWhen(true)] string? key) => key is { Length: >= 20 } && !key.Any(char.IsWhiteSpace);
+
+    /// <summary>Encrypts the key and keeps its last four characters so Settings can show which key is saved.</summary>
+    private void StoreKey(Dictionary<string, string?> values, string key)
+    {
+        values["ai_key"] = secrets.Protect(key);
+        values["ai_key_hint"] = key[^4..];
     }
 
     private static string Base64Url(byte[] bytes) => Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
@@ -189,12 +191,12 @@ public sealed class WorkspaceController(SettingsService settings, MemberReposito
     public async Task<IActionResult> SaveAi(string aiProvider, string? aiModel, string? openRouterModel, string? apiKey, bool aiEnabled, bool removeKey, string? next)
     {
         aiProvider = aiProvider is "anthropic" or "openrouter" ? aiProvider : "none";
-        var current = await settings.GetAsync();
+        var saved = await settings.GetAsync();
         var model = AiClient.NormalizeModel(aiProvider, aiProvider == "openrouter" ? openRouterModel : aiModel);
         var values = new Dictionary<string, string?> { ["ai_provider"] = aiProvider, ["ai_model"] = model, ["ai_enabled"] = aiEnabled ? "1" : "0" };
 
         apiKey = apiKey?.Trim();
-        var providerChanged = aiProvider != current.AiProvider;
+        var providerChanged = aiProvider != saved.AiProvider;
         if (removeKey || aiProvider == "none" || (providerChanged && string.IsNullOrEmpty(apiKey)))
         {
             values["ai_key"] = "";
@@ -202,9 +204,8 @@ public sealed class WorkspaceController(SettingsService settings, MemberReposito
         }
         if (!string.IsNullOrEmpty(apiKey) && aiProvider != "none")
         {
-            if (apiKey.Length < 20 || apiKey.Any(char.IsWhiteSpace)) return Back("That does not look like an API key. Paste the whole key.", next, error: true);
-            values["ai_key"] = secrets.Protect(apiKey);
-            values["ai_key_hint"] = apiKey[^4..];
+            if (!LooksLikeKey(apiKey)) return Back("That does not look like an API key. Paste the whole key.", next, error: true);
+            StoreKey(values, apiKey);
         }
         await settings.SetAsync(values);
 

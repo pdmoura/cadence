@@ -21,3 +21,5 @@ services:
         sync: false # the same value you gave `wrangler secret put INTERNAL_TOKEN`
       - key: Webhooks__Secret
         generateValue: true
+      - key: ForwardedHeaders__Enabled
+        value: "true" # Render terminates TLS; trust its X-Forwarded-Proto so generated URLs use https (Render also sets RENDER=true)
