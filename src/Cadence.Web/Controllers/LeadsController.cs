@@ -146,6 +146,17 @@ public sealed class LeadsController(LeadRepository leads, SuggestionRepository s
         return RedirectToAction(nameof(Details), new { id });
     }
 
+    [HttpPost("{id:long}/delete")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(long id)
+    {
+        var lead = await leads.FindAsync(id);
+        if (lead is null) { TempData["error"] = "That lead was already deleted."; return RedirectToAction(nameof(Index)); }
+        await leads.DeleteAsync(id);
+        TempData["toast"] = $"{lead.Company} was deleted, with its suggestions, activity and history.";
+        return RedirectToAction(nameof(Index));
+    }
+
     [HttpPost("{id:long}/activities")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> AddActivity(long id, string kind, string summary, string? outcome)

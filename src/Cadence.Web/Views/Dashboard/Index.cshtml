@@ -63,8 +63,11 @@
 
 <section class="card">
     <div class="card-head">
-        <h2 class="card-title">Pipeline</h2>
-        <span class="muted num">@Model.ByStage.Values.Sum() leads</span>
+        <div>
+            <h2 class="card-title">Pipeline</h2>
+            <p class="hint" style="margin-top:2px">@Model.ByStage.Values.Sum() leads. Select a stage to open its list.</p>
+        </div>
+        <a class="card-link" href="/leads">All leads</a>
     </div>
     <div class="card-body">
         <div class="stackbar" role="img" aria-label="Leads by stage">
@@ -73,10 +76,15 @@
                 <a class="seg-@s.Key()" href="/leads?stage=@s.Key()" style="flex:@Model.ByStage[s]" title="@s.Label(): @Model.ByStage[s]"></a>
             }
         </div>
-        <div class="legend">
+        @{ var pipelineTotal = Math.Max(1, Model.ByStage.Values.Sum()); }
+        <div class="stage-tiles">
             @foreach (var s in Stages.Ordered)
             {
-                <a href="/leads?stage=@s.Key()"><span class="l"><i class="seg-@s.Key()"></i>@s.Label()</span><span class="n">@Model.ByStage[s]</span></a>
+                <a class="stage-tile st-@s.Key()" href="/leads?stage=@s.Key()" aria-label="@s.Label(): @Model.ByStage[s] leads. Open the list.">
+                    <span class="l"><i class="seg-@s.Key()"></i>@s.Label()</span>
+                    <span class="n">@Model.ByStage[s]<small>@(Model.ByStage[s] * 100 / pipelineTotal)%</small></span>
+                    <svg class="ic go" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+                </a>
             }
         </div>
     </div>

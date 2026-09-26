@@ -27,8 +27,15 @@
         </fieldset>
 
         <div class="stack" style="gap:16px" data-provider-panel="anthropic openrouter">
+            <div class="composer stack" style="gap:10px;border-style:solid" data-provider-panel="openrouter">
+                <b style="color:var(--ink)">Sign in instead of pasting a key</b>
+                <span class="muted" style="font-size:13px">Log in to OpenRouter and approve Cadence. OpenRouter creates a key for your account and sends it straight here; you never copy it.</span>
+                <a class="btn btn-primary" style="justify-self:start" href="/settings/ai/openrouter/connect?next=@Uri.EscapeDataString(Model.Here)">
+                    <svg class="ic" viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>Sign in with OpenRouter
+                </a>
+            </div>
             <div class="field">
-                <label for="apiKey">API key</label>
+                <label for="apiKey"><span class="or-only">Or paste an </span>API key</label>
                 <input id="apiKey" name="apiKey" type="password" class="input" autocomplete="off" spellcheck="false"
                        placeholder="@(ai.KeyConfigured ? $"Saved key ending in {ai.KeyHint}. Paste a new one to replace it." : "Paste your API key")" />
                 <span class="hint">
@@ -72,6 +79,14 @@
             <button class="btn btn-secondary" type="submit"><span>Test connection</span></button>
         </form>
     }
+
+    <details class="disclosure composer">
+        <summary style="font-weight:700;color:var(--ink)">Can I use my ChatGPT or Claude subscription instead?</summary>
+        <div class="prose" style="margin-top:10px;font-size:13.5px">
+            <p>Not directly. ChatGPT Plus and Claude Pro or Max plans cover their own apps only; OpenAI and Anthropic do not let other products spend a personal subscription's quota, and their terms do not allow routing it through a third-party tool. Cadence therefore uses the providers' developer platforms, which are billed per use.</p>
+            <p>The easiest route is <b>Sign in with OpenRouter</b>: one login, no key to copy, and access to Claude, GPT, Gemini and Llama models from the same account. Research briefs cost a fraction of a cent to a few cents each, depending on the model.</p>
+        </div>
+    </details>
 
     <details class="disclosure composer">
         <summary style="font-weight:700;color:var(--ink)">What is sent to the AI, and what it does</summary>

@@ -212,3 +212,81 @@ public sealed class IntakeEndpointTests : IAsyncLifetime
             Assert.Equal(HttpStatusCode.OK, (await client.GetAsync(path)).StatusCode);
     }
 }
+
+public sealed class DeleteLeadTests : IAsyncLifetime
+{
+    private TestDatabase _db = null!;
+
+    public async Task InitializeAsync()
+    {
+        _db = await TestDatabase.CreateAsync(seed: false);
+        await _db.Db.ExecuteAsync("INSERT INTO members (id, name, email, role) VALUES (1, 'Ana', 'a@t', 'sdr')");
+    }
+
+    public Task DisposeAsync() => _db.DisposeAsync().AsTask();
+
+    [Fact]
+    public async Task Deleting_a_lead_cascades_to_its_history_but_keeps_the_delivery_log()
+    {
+        var leads = new LeadRepository(_db.Db);
+        var id = await leads.CreateAsync(new LeadInput { Company = "Gone Co", Email = "g@gone.co" }, 1, "manual");
+        await new SuggestionRepository(_db.Db).AddAsync(id, "industry", "Software", null, "heuristic", 0.6, null);
+        await new ActivityRepository(_db.Db).AddAsync(id, 1, ActivityKind.Call, "Called", null);
+        await new WebhookRepository(_db.Db).LogAsync("test", "lead.created", "{}", true, "accepted", "Created", id);
+
+        Assert.Equal(1, await leads.DeleteAsync(id));
+        Assert.Null(await leads.FindAsync(id));
+        foreach (var table in new[] { "enrichment_suggestions", "activities", "lead_stage_events" })
+            Assert.Equal(0, (await _db.Db.QueryAsync($"SELECT COUNT(*) AS n FROM {table} WHERE lead_id = ?", id))[0].Int("n"));
+        var log = await _db.Db.QueryAsync("SELECT lead_id FROM webhook_deliveries");
+        Assert.Single(log);
+        Assert.Null(log[0].LongOrNull("lead_id"));
+    }
+}
+
+public sealed class OpenRouterAndCalendarTests : IAsyncLifetime
+{
+    private WebApplicationFactory<Program> _factory = null!;
+    private string _dbPath = null!;
+
+    public Task InitializeAsync()
+    {
+        _dbPath = Path.Combine(Path.GetTempPath(), $"cadence-or-{Guid.NewGuid():N}.db");
+        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b => b.UseSetting("Database:Path", _dbPath));
+        return Task.CompletedTask;
+    }
+
+    public async Task DisposeAsync()
+    {
+        await _factory.DisposeAsync();
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        try { File.Delete(_dbPath); } catch { }
+    }
+
+    [Fact]
+    public async Task Sign_in_with_OpenRouter_redirects_with_a_S256_challenge_and_a_verifier_cookie()
+    {
+        var client = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        var response = await client.GetAsync("/settings/ai/openrouter/connect?next=%2Fsetup%2F5");
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var location = response.Headers.Location!.ToString();
+        Assert.StartsWith("https://openrouter.ai/auth?callback_url=", location);
+        Assert.Contains("code_challenge_method=S256", location);
+        Assert.Contains("%2Fsettings%2Fai%2Fopenrouter%2Fcallback", location);
+        Assert.Contains(response.Headers.GetValues("Set-Cookie"), c => c.StartsWith("cadence_or_pkce=") && c.Contains("httponly", StringComparison.OrdinalIgnoreCase));
+
+        // A callback without the cookie is rejected without calling OpenRouter.
+        var cb = await client.GetAsync("/settings/ai/openrouter/callback?code=abc");
+        Assert.Equal(HttpStatusCode.Redirect, cb.StatusCode);
+    }
+
+    [Fact]
+    public async Task Standup_calendar_renders_past_days_with_history()
+    {
+        var client = _factory.CreateClient();
+        var day = DateTime.UtcNow.AddDays(-7).ToString("yyyy-MM-dd");
+        var html = await client.GetStringAsync($"/standups?day={day}");
+        Assert.Contains("cal-day", html);
+        Assert.Contains("is-selected", html);
+    }
+}

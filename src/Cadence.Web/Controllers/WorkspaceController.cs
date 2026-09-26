@@ -1,3 +1,7 @@
+using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using Cadence.Web.Data;
 using Cadence.Web.Models;
 using Cadence.Web.Services;
@@ -33,8 +37,83 @@ public sealed class WorkspaceViewModel
     ];
 }
 
-public sealed class WorkspaceController(SettingsService settings, MemberRepository members, AiClient ai, SecretBox secrets, CurrentMember current) : Controller
+public sealed class WorkspaceController(SettingsService settings, MemberRepository members, AiClient ai, SecretBox secrets, CurrentMember current,
+    IHttpClientFactory httpFactory, ILogger<WorkspaceController> logger) : Controller
 {
+    private const string PkceCookie = "cadence_or_pkce";
+
+    /// <summary>
+    /// "Sign in with OpenRouter" (OAuth PKCE). The user logs in on openrouter.ai and approves Cadence; OpenRouter returns
+    /// a key tied to their account, so nobody copies a key by hand. The verifier lives in a short-lived HttpOnly cookie.
+    /// </summary>
+    [HttpGet("/settings/ai/openrouter/connect")]
+    public IActionResult ConnectOpenRouter(string? next)
+    {
+        var verifier = Base64Url(RandomNumberGenerator.GetBytes(48));
+        var challenge = Base64Url(SHA256.HashData(Encoding.ASCII.GetBytes(verifier)));
+        var back = next is { Length: > 0 } && Url.IsLocalUrl(next) ? next : "/settings?tab=ai";
+        Response.Cookies.Append(PkceCookie, secrets.Protect(verifier + "|" + back), new CookieOptions
+        {
+            HttpOnly = true, Secure = Request.IsHttps, SameSite = SameSiteMode.Lax, MaxAge = TimeSpan.FromMinutes(15), Path = "/settings/ai/openrouter",
+        });
+        var callback = $"{Request.Scheme}://{Request.Host}/settings/ai/openrouter/callback";
+        var url = "https://openrouter.ai/auth?callback_url=" + Uri.EscapeDataString(callback) +
+                  "&code_challenge=" + challenge + "&code_challenge_method=S256&key_label=" + Uri.EscapeDataString("Cadence");
+        return Redirect(url);
+    }
+
+    [HttpGet("/settings/ai/openrouter/callback")]
+    public async Task<IActionResult> OpenRouterCallback(string? code)
+    {
+        var stored = secrets.Unprotect(Request.Cookies[PkceCookie]);
+        Response.Cookies.Delete(PkceCookie, new CookieOptions { Path = "/settings/ai/openrouter" });
+        var parts = stored?.Split('|', 2);
+        var back = parts is { Length: 2 } && Url.IsLocalUrl(parts[1]) ? parts[1] : "/settings?tab=ai";
+        if (parts is not { Length: 2 } || string.IsNullOrWhiteSpace(code))
+        {
+            TempData["error"] = "The OpenRouter sign-in expired or was cancelled. Try again.";
+            return Redirect(back);
+        }
+
+        try
+        {
+            var http = httpFactory.CreateClient("openrouter");
+            using var response = await http.PostAsJsonAsync("https://openrouter.ai/api/v1/auth/keys",
+                new { code, code_verifier = parts[0], code_challenge_method = "S256" }, HttpContext.RequestAborted);
+            if (!response.IsSuccessStatusCode)
+            {
+                TempData["error"] = $"OpenRouter did not issue a key (HTTP {(int)response.StatusCode}). Try signing in again.";
+                return Redirect(back);
+            }
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(HttpContext.RequestAborted));
+            var key = doc.RootElement.TryGetProperty("key", out var k) ? k.GetString() : null;
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                TempData["error"] = "OpenRouter answered without a key. Try signing in again.";
+                return Redirect(back);
+            }
+
+            var current = await settings.GetAsync();
+            await settings.SetAsync(new()
+            {
+                ["ai_provider"] = "openrouter",
+                ["ai_model"] = current.AiProvider == "openrouter" ? current.AiModel : "openrouter/auto",
+                ["ai_enabled"] = "1",
+                ["ai_key"] = secrets.Protect(key),
+                ["ai_key_hint"] = key[^4..],
+            });
+            TempData["toast"] = "Connected to OpenRouter. Use Test connection to check it.";
+        }
+        catch (HttpRequestException ex)
+        {
+            logger.LogWarning(ex, "OpenRouter key exchange failed");
+            TempData["error"] = "Could not reach OpenRouter to finish signing in.";
+        }
+        return Redirect(back);
+    }
+
+    private static string Base64Url(byte[] bytes) => Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+
     private static readonly string[] Tabs = ["workspace", "team", "goals", "sources", "ai", "appearance"];
 
     [HttpGet("/settings")]

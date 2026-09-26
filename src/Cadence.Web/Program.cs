@@ -13,6 +13,15 @@ if (Environment.GetEnvironmentVariable("PORT") is { Length: > 0 } port)
     builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
 builder.Services.AddControllersWithViews();
+
+// Render (and Cloudflare) terminate TLS in front of the app; trust their X-Forwarded-* headers so generated
+// URLs (intake snippets, OAuth callbacks, og:image) use https.
+builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>(o =>
+{
+    o.ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto;
+    o.KnownIPNetworks.Clear();
+    o.KnownProxies.Clear();
+});
 builder.Services.Configure<RequestLocalizationOptions>(o => { o.DefaultRequestCulture = new("en-US"); o.SupportedCultures = [culture]; o.SupportedUICultures = [culture]; });
 builder.Services.AddHttpContextAccessor();
 
@@ -74,6 +83,7 @@ if (!app.Environment.IsDevelopment())
     app.UseStatusCodePagesWithReExecute("/error", "?code={0}");
 }
 
+app.UseForwardedHeaders();
 app.UseRequestLocalization();
 app.UseStaticFiles();
 app.UseRouting();

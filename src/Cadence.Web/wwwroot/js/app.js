@@ -64,6 +64,20 @@
     });
   });
 
+  // Modal dialogs (native <dialog>: focus trap, Escape and backdrop handled by the browser).
+  document.querySelectorAll('[data-dialog-open]').forEach((btn) => {
+    const dialog = document.querySelector(btn.getAttribute('data-dialog-open'));
+    if (!dialog) return;
+    const form = dialog.querySelector('form');
+    btn.addEventListener('click', () => {
+      if (typeof dialog.showModal === 'function') dialog.showModal();
+      else if (form && window.confirm(form.getAttribute('data-confirm-fallback') || 'Are you sure?')) form.submit();
+    });
+    dialog.addEventListener('click', (e) => { if (e.target === dialog) dialog.close(); });
+    dialog.querySelectorAll('[data-dialog-close]').forEach((c) => c.addEventListener('click', () => dialog.close()));
+    if (form) form.addEventListener('submit', () => { const b = form.querySelector('[type="submit"]'); if (b) b.classList.add('is-loading'); });
+  });
+
   // AI settings: show the fields for the chosen provider.
   document.querySelectorAll('form[data-provider]').forEach((form) => {
     form.addEventListener('change', (e) => {

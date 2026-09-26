@@ -126,6 +126,9 @@ public sealed class LeadRepository(ISqlExecutor db)
 
     public async Task<int> CountAsync() => (await db.QueryAsync("SELECT COUNT(*) AS n FROM leads"))[0].Int("n");
 
+    /// <summary>Deletes a lead. Suggestions, activities and stage events go with it (ON DELETE CASCADE); webhook log rows are kept and unlinked.</summary>
+    public Task<int> DeleteAsync(long id) => db.ExecuteAsync("DELETE FROM leads WHERE id = ?", id);
+
     public Task<int> SetScoreAsync(long id, int score) =>
         db.ExecuteAsync("UPDATE leads SET score = ? WHERE id = ?", Math.Clamp(score, 0, 100), id);
 
@@ -267,6 +270,10 @@ public sealed class StandupRepository(ISqlExecutor db)
           help_needed = excluded.help_needed, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
         """,
         memberId, day, yesterday.Trim(), today.Trim(), metric.Trim(), blockers.Trim(), help.Trim());
+
+    public async Task<Dictionary<string, int>> CountsByDayAsync(string from, string to) =>
+        (await db.QueryAsync("SELECT day, COUNT(*) AS n FROM standups WHERE day >= ? AND day <= ? GROUP BY day", from, to))
+        .ToDictionary(r => r.Str("day"), r => r.Int("n"));
 
     public async Task<IReadOnlyList<string>> RecentDaysAsync(int limit) =>
         (await db.QueryAsync("SELECT DISTINCT day FROM standups ORDER BY day DESC LIMIT ?", limit)).Select(r => r.Str("day")).ToList();

@@ -16,6 +16,16 @@ public sealed class StandupsViewModel
     public required string Report { get; init; }
     public bool IsToday => Day == DateTime.UtcNow.ToString("yyyy-MM-dd");
     public bool CanSend { get; init; }
+    public IReadOnlyList<CalendarDay> Calendar { get; init; } = [];
+    public string? EarlierDay { get; init; }
+    public string? LaterDay { get; init; }
+    public string RangeLabel { get; init; } = "";
+}
+
+public sealed record CalendarDay(DateOnly Date, int Posted, int TeamSize, bool IsToday, bool IsSelected, bool IsFuture)
+{
+    public string Key => Date.ToString("yyyy-MM-dd");
+    public bool IsWeekend => Date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
 }
 
 [Route("standups")]
@@ -29,6 +39,17 @@ public sealed class StandupsController(StandupRepository standups, MemberReposit
         var me = await current.GetAsync();
         var team = await members.AllAsync();
         var list = await standups.ForDayAsync(day);
+
+        // Three-week calendar ending with the selected day's week (Monday first).
+        var selected = DateOnly.ParseExact(day, "yyyy-MM-dd");
+        var todayDate = DateOnly.FromDateTime(DateTime.UtcNow);
+        var weekStart = selected.AddDays(-(((int)selected.DayOfWeek + 6) % 7));
+        var gridStart = weekStart.AddDays(-14);
+        var gridEnd = weekStart.AddDays(6);
+        var counts = await standups.CountsByDayAsync(gridStart.ToString("yyyy-MM-dd"), gridEnd.ToString("yyyy-MM-dd"));
+        var calendar = Enumerable.Range(0, 21).Select(i => gridStart.AddDays(i)).Select(d => new CalendarDay(
+            d, counts.GetValueOrDefault(d.ToString("yyyy-MM-dd")), team.Count, d == todayDate, d == selected, d > todayDate)).ToList();
+        var later = gridEnd.AddDays(21) > todayDate ? todayDate : gridEnd.AddDays(21);
         return View(new StandupsViewModel
         {
             Day = day,
@@ -39,6 +60,10 @@ public sealed class StandupsController(StandupRepository standups, MemberReposit
             RecentDays = await standups.RecentDaysAsync(10),
             Report = StandupReportBuilder.Build(day, list, await MetricsAsync(day), team),
             CanSend = !string.IsNullOrWhiteSpace((await settings.GetAsync()).OutboundUrl),
+            Calendar = calendar,
+            EarlierDay = gridStart.AddDays(-1).ToString("yyyy-MM-dd"),
+            LaterDay = gridEnd < todayDate ? later.ToString("yyyy-MM-dd") : null,
+            RangeLabel = gridStart.Month == gridEnd.Month ? $"{gridStart.Day} to {gridEnd:d MMMM yyyy}" : $"{gridStart:d MMM} to {gridEnd:d MMM yyyy}",
         });
     }
 
