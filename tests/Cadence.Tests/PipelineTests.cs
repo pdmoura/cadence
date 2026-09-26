@@ -43,6 +43,11 @@ public sealed class PipelineTests : IAsyncLifetime
         Assert.Null(e.From);
         Assert.Equal(Stage.New, e.To);
         Assert.Equal(1, e.MemberId);
+
+        // The score is computed on creation, not only after the first move.
+        var lead = await _leads.FindAsync(id);
+        Assert.Equal(LeadPipelineService.Score(lead!), lead!.Score);
+        Assert.True(lead.Score > 0);
     }
 
     [Fact]

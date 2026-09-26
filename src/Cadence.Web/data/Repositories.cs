@@ -64,6 +64,8 @@ public sealed class LeadRepository(ISqlExecutor db)
             input.Company.Trim(), Clean(input.Website), Clean(input.ContactName), Clean(input.ContactTitle), Clean(input.Email)?.ToLowerInvariant(),
             Clean(input.Phone), Clean(input.Industry), Clean(input.Country), input.Employees, source, input.OwnerId, Clean(input.Notes));
         await db.ExecuteAsync("INSERT INTO lead_stage_events (lead_id, from_stage, to_stage, member_id, reason) VALUES (?, NULL, 'new', ?, ?)", id, actorId, $"Created from {source}");
+        if (await FindAsync(id) is { } created)
+            await SetScoreAsync(id, Services.LeadPipelineService.Score(created));
         return id;
     }
 

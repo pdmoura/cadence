@@ -2,6 +2,8 @@
 
 **An SDR workbench: lead pipeline, AI-assisted research with human validation, daily stand-ups and the management report that comes out of them.**
 
+**Live demo:** https://cadence-jo48.onrender.com (free instance: the first visit after a quiet period takes about a minute to wake up). Data lives in Cloudflare D1 behind https://cadence-d1.pdmoura.workers.dev.
+
 ASP.NET Core MVC · C# 13 / .NET 10 · SQLite locally, Cloudflare D1 in production · Cloudflare Workers · Docker on Render (or Cloudflare Containers) · xUnit · GitHub Actions
 
 ![Dashboard](docs/screenshots/dashboard.png)
