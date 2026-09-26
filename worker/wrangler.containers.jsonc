@@ -17,7 +17,7 @@
     {
       "binding": "DB",
       "database_name": "cadence",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "18028a1f-657c-48b6-9dc9-955ff40b2970",
       "migrations_dir": "../db/migrations"
     }
   ],
