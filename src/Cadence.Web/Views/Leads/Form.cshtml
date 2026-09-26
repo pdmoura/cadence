@@ -2,26 +2,25 @@
 @{
     var editing = Model.Id is not null;
     ViewData["Title"] = editing ? "Edit lead" : "New lead";
-    ViewData["Eyebrow"] = editing ? $"Lead #{Model.Id}" : "Manual entry";
+    ViewData["Eyebrow"] = editing ? null : "Only the company is required. Empty fields can be filled by enrichment suggestions.";
     var i = Model.Input;
     string Err(string key) => ViewData.ModelState.TryGetValue(key, out var e) && e.Errors.Count > 0 ? e.Errors[0].ErrorMessage : "";
 }
 
-<div class="card" style="max-width:880px">
-    <div class="card-head"><div><h2>@(editing ? "Update the record" : "Add a lead by hand")</h2><p class="sub">Only the company is required. Leave fields empty and let the enrichment providers propose values for review.</p></div></div>
-    <div class="card-body">
+<div class="card" style="max-width:820px">
+    <div class="card-body" style="padding-top:22px">
         <form method="post" class="form-grid">
             @Html.AntiForgeryToken()
-            <div class="field span-2"><label for="Company">Company *</label><input id="Company" name="Company" class="input" value="@i.Company" required autofocus /><span class="err">@Err("Company")</span></div>
-            <div class="field"><label for="Website">Website</label><input id="Website" name="Website" class="input" value="@i.Website" placeholder="https://" /></div>
-            <div class="field"><label for="Industry">Industry</label><input id="Industry" name="Industry" class="input" value="@i.Industry" /></div>
-            <div class="field"><label for="ContactName">Contact name</label><input id="ContactName" name="ContactName" class="input" value="@i.ContactName" /></div>
-            <div class="field"><label for="ContactTitle">Contact title</label><input id="ContactTitle" name="ContactTitle" class="input" value="@i.ContactTitle" placeholder="Owner, Operations Director…" /></div>
+            <div class="field span-2"><label for="Company">Company</label><input id="Company" name="Company" class="input" value="@i.Company" required autofocus /><span class="err">@Err("Company")</span></div>
+            <div class="field"><label for="ContactName">Contact</label><input id="ContactName" name="ContactName" class="input" value="@i.ContactName" /></div>
+            <div class="field"><label for="ContactTitle">Title</label><input id="ContactTitle" name="ContactTitle" class="input" value="@i.ContactTitle" placeholder="Owner, Operations Director" /></div>
             <div class="field"><label for="Email">Email</label><input id="Email" name="Email" class="input" type="email" value="@i.Email" /><span class="err">@Err("Email")</span></div>
             <div class="field"><label for="Phone">Phone</label><input id="Phone" name="Phone" class="input" value="@i.Phone" /></div>
+            <div class="field"><label for="Website">Website</label><input id="Website" name="Website" class="input" value="@i.Website" placeholder="https://" /></div>
+            <div class="field"><label for="Industry">Industry</label><input id="Industry" name="Industry" class="input" value="@i.Industry" /></div>
             <div class="field"><label for="Country">Country</label><input id="Country" name="Country" class="input" value="@i.Country" /></div>
             <div class="field"><label for="Employees">Employees</label><input id="Employees" name="Employees" class="input" type="number" min="1" value="@i.Employees" /></div>
-            <div class="field"><label for="OwnerId">Owner</label>
+            <div class="field span-2"><label for="OwnerId">Owner</label>
                 <select id="OwnerId" name="OwnerId" class="select"><option value="">Unassigned</option>@foreach (var m in Model.Members) { <option value="@m.Id" selected="@(i.OwnerId == m.Id)">@m.Name · @m.RoleLabel</option> }</select>
             </div>
             <div class="field span-2"><label for="Notes">Notes</label><textarea id="Notes" name="Notes" class="textarea">@i.Notes</textarea></div>

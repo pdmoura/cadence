@@ -1,51 +1,62 @@
 @inject Cadence.Web.Services.CurrentMember Current
 @inject MemberRepository Members
+@inject SuggestionRepository Suggestions
 @{
     var me = await Current.GetAsync();
     var team = await Members.AllAsync();
+    var (pending, _, _) = await Suggestions.CountsAsync();
     var path = Context.Request.Path.Value ?? "/";
     string Active(string prefix) => (prefix == "/" ? path == "/" : path.StartsWith(prefix)) ? "is-active" : "";
     var title = ViewData["Title"] as string;
+    var hideHead = ViewData["HideHead"] is true;
+    var baseUrl = $"{Context.Request.Scheme}://{Context.Request.Host}";
 }
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>@(title is null ? "Cadence" : $"{title} · Cadence")</title>
-    <meta name="description" content="Cadence: SDR pipeline, AI-assisted lead research with human validation, daily stand-ups and management reports." />
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta name="description" content="Cadence: the SDR workbench. Lead pipeline, AI-assisted research with human validation, daily stand-ups and reports." />
+    <meta name="theme-color" content="#ffffff" />
+    <meta property="og:title" content="Cadence · The SDR workbench" />
+    <meta property="og:description" content="Lead pipeline, AI-assisted research with human validation, daily stand-ups and reports." />
+    <meta property="og:image" content="@baseUrl/img/og.png" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon-64.png" type="image/png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/css/app.css" asp-append-version="true" />
 </head>
 <body>
 <div class="shell">
     <aside class="sidebar" aria-label="Main navigation">
-        <a class="brand" href="/">
-            <span class="brand-mark" aria-hidden="true">
-                <svg viewBox="0 0 32 32" width="32" height="32"><rect width="32" height="32" rx="9" fill="#3B5BDB"/><path d="M9 20.5c2.6 0 3.6-9 6.5-9s3.6 9 7.5 9" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/></svg>
-            </span>
-            <span class="brand-text">Cadence<small>SDR workbench</small></span>
+        <a class="brand" href="/" aria-label="Cadence home">
+            <img class="mark" src="/img/logo-mark-192.png" alt="" width="34" height="34" />
+            <img class="wordmark" src="/img/logo-wordmark.png" alt="Cadence" width="115" height="21" />
         </a>
 
         <nav class="nav">
-            <a class="nav-link @Active("/")" href="/"><svg class="ic" viewBox="0 0 24 24"><path d="M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-5H4zM14 8h6V4h-6z"/></svg>Dashboard</a>
-            <a class="nav-link @Active("/leads")" href="/leads"><svg class="ic" viewBox="0 0 24 24"><path d="M16 11a4 4 0 1 0-8 0 4 4 0 0 0 8 0zM4 21v-1a5 5 0 0 1 5-5h6a5 5 0 0 1 5 5v1"/></svg>Leads</a>
-            <a class="nav-link @Active("/standups")" href="/standups"><svg class="ic" viewBox="0 0 24 24"><path d="M12 6v6l4 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg>Stand-ups</a>
+            <a class="nav-link @Active("/")" href="/"><svg class="ic" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Home</a>
+            <a class="nav-link @Active("/leads")" href="/leads"><svg class="ic" viewBox="0 0 24 24"><path d="M16 21v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1M9 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-1a4 4 0 0 0-3-3.9M16 4.1a4 4 0 0 1 0 7.8"/></svg>Leads @if (pending > 0) { <span class="nav-count" title="Suggestions waiting for review">@pending</span> }</a>
+            <a class="nav-link @Active("/standups")" href="/standups"><svg class="ic" viewBox="0 0 24 24"><path d="M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg>Stand-up</a>
+            <a class="nav-link @Active("/reports")" href="/reports"><svg class="ic" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Reports</a>
             <a class="nav-link @Active("/automations")" href="/automations"><svg class="ic" viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>Automations</a>
-            <a class="nav-link @Active("/reports")" href="/reports"><svg class="ic" viewBox="0 0 24 24"><path d="M4 19h16M7 16V9M12 16V5M17 16v-4"/></svg>Reports</a>
         </nav>
 
         <div class="sidebar-foot">
-            <form method="post" action="/session/member" class="member-switch">
+            <form method="post" action="/session/member">
                 @Html.AntiForgeryToken()
                 <input type="hidden" name="returnUrl" value="@(path + Context.Request.QueryString)" />
-                <label class="member-label" for="member">Acting as</label>
-                <div class="member-row">
+                <div class="member">
                     <span class="avatar" aria-hidden="true">@(me?.Initials ?? "?")</span>
-                    <select id="member" name="memberId" class="member-select" onchange="this.form.submit()" aria-label="Acting as team member">
+                    <span class="who"><b>@(me?.Name ?? "Choose member")</b><span>@(me?.RoleLabel ?? "")</span></span>
+                    <svg class="ic chev" viewBox="0 0 24 24"><path d="m7 15 5 5 5-5M7 9l5-5 5 5"/></svg>
+                    <select name="memberId" class="member-select" onchange="this.form.submit()" aria-label="Acting as team member">
                         @foreach (var m in team)
                         {
                             <option value="@m.Id" selected="@(me?.Id == m.Id)">@m.Name · @m.RoleLabel</option>
@@ -53,26 +64,38 @@
                     </select>
                 </div>
             </form>
-            <a class="foot-link" href="https://github.com/pdmoura/cadence" target="_blank" rel="noopener">Source on GitHub</a>
+            <a class="foot-link" href="https://github.com/pdmoura/cadence" target="_blank" rel="noopener">View source on GitHub</a>
         </div>
     </aside>
 
     <div class="main">
-        <header class="topbar">
+        <header class="mobilebar">
             <button class="menu-btn" type="button" aria-label="Open navigation" data-toggle-nav>
-                <svg viewBox="0 0 24 24" class="ic"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+                <svg viewBox="0 0 24 24" class="ic"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
             </button>
-            <div class="topbar-title">
-                @if (ViewData["Eyebrow"] is string eyebrow) { <span class="eyebrow">@eyebrow</span> }
-                <h1>@(title ?? "Dashboard")</h1>
-            </div>
-            <div class="topbar-actions">@RenderSection("Actions", required: false)</div>
+            <a class="brand" href="/" aria-label="Cadence home">
+                <img class="mark" src="/img/logo-mark-192.png" alt="" width="28" height="28" />
+                <img class="wordmark" src="/img/logo-wordmark.png" alt="Cadence" width="93" height="17" />
+            </a>
+            <span class="spacer"></span>
+            <span class="avatar sm" aria-hidden="true">@(me?.Initials ?? "?")</span>
         </header>
 
         @if (TempData["toast"] is string toast) { <div class="toast" role="status" data-toast>@toast</div> }
         @if (TempData["error"] is string err) { <div class="toast is-error" role="alert" data-toast>@err</div> }
 
         <main class="content">
+            @if (!hideHead)
+            {
+                <div class="page-head">
+                    <div>
+                        <h1>@(title ?? "Home")</h1>
+                        @if (IsSectionDefined("Meta")) { <div class="page-meta">@RenderSection("Meta")</div> }
+                        else if (ViewData["Eyebrow"] is string meta) { <div class="page-meta">@meta</div> }
+                    </div>
+                    @if (IsSectionDefined("Actions")) { <div class="page-actions">@RenderSection("Actions")</div> }
+                </div>
+            }
             @RenderBody()
         </main>
     </div>

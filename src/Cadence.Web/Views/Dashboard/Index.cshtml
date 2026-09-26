@@ -1,120 +1,125 @@
 @model DashboardViewModel
 @{
-    ViewData["Title"] = "Dashboard";
-    ViewData["Eyebrow"] = DateTime.UtcNow.ToString("dddd, d MMMM yyyy");
+    var local = DateTimeOffset.UtcNow;
+    try { if (Model.Me is not null) local = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, TimeZoneInfo.FindSystemTimeZoneById(Model.Me.Timezone)); } catch { }
+    var greeting = local.Hour < 5 ? "Good evening" : local.Hour < 12 ? "Good morning" : local.Hour < 18 ? "Good afternoon" : "Good evening";
+    var first = Model.Me?.Name.Split(' ')[0];
+    ViewData["Title"] = first is null ? greeting : $"{greeting}, {first}";
+}
+@section Meta {
+    <span>@local.ToString("dddd, d MMMM")</span>
+    @if (Model.PendingSuggestions > 0) { <span class="faint sep">·</span><a class="card-link" href="/leads?pending=true">@Model.PendingSuggestions suggestions need a decision</a> }
 }
 @section Actions {
-    <a class="btn btn-secondary" href="/standups"><svg class="ic" viewBox="0 0 24 24"><path d="M12 6v6l4 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg><span class="label">Stand-up</span></a>
+    <a class="btn btn-secondary" href="/standups"><svg class="ic" viewBox="0 0 24 24"><path d="M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg><span class="label">@(Model.MyStandup is null ? "Post stand-up" : "Stand-up")</span></a>
     <a class="btn btn-primary" href="/leads/new"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span class="label">New lead</span></a>
 }
 
 <section class="grid grid-kpi">
-    <div class="card kpi">
-        <span class="kpi-label"><span class="kpi-icon"><svg class="ic" viewBox="0 0 24 24"><path d="M16 11a4 4 0 1 0-8 0 4 4 0 0 0 8 0zM4 21v-1a5 5 0 0 1 5-5h6a5 5 0 0 1 5 5v1"/></svg></span>Open leads</span>
-        <span class="kpi-value">@Model.TotalOpen</span>
-        <span class="kpi-hint"><b>@Model.ByStage[Stage.New]</b> new · <b>@Model.ByStage[Stage.Researching]</b> researching</span>
-    </div>
-    <div class="card kpi">
-        <span class="kpi-label"><span class="kpi-icon warn"><svg class="ic" viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></span>Awaiting human review</span>
-        <span class="kpi-value">@Model.PendingSuggestions</span>
-        <span class="kpi-hint">AI suggestions nobody has accepted or rejected yet</span>
-    </div>
-    <div class="card kpi">
-        <span class="kpi-label"><span class="kpi-icon ok"><svg class="ic" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span>Validated this week</span>
-        <span class="kpi-value">@Model.ValidatedThisWeek</span>
-        <span class="kpi-hint"><b>@Model.QualifiedThisWeek</b> qualified in the same period</span>
-    </div>
-    <div class="card kpi">
-        <span class="kpi-label"><span class="kpi-icon"><svg class="ic" viewBox="0 0 24 24"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg></span>Outreach, last 24h</span>
-        <span class="kpi-value">@Model.ActivitiesToday</span>
-        <span class="kpi-hint">calls, emails, LinkedIn touches and meetings logged</span>
-    </div>
+    <a class="card stat" href="/leads">
+        <span class="stat-label">Open leads</span>
+        <span class="stat-value">@Model.TotalOpen</span>
+        <span class="stat-hint">@Model.ByStage[Stage.New] new, @Model.ByStage[Stage.Researching] in research</span>
+    </a>
+    <a class="card stat @(Model.PendingSuggestions > 0 ? "accent" : "")" href="/leads?pending=true">
+        <span class="stat-label">To review</span>
+        <span class="stat-value">@Model.PendingSuggestions</span>
+        <span class="stat-hint">AI suggestions</span>
+    </a>
+    <a class="card stat" href="/reports">
+        <span class="stat-label">Validated this week</span>
+        <span class="stat-value">@Model.ValidatedThisWeek</span>
+        <span class="stat-hint">@Model.QualifiedThisWeek qualified</span>
+    </a>
+    <a class="card stat" href="/reports">
+        <span class="stat-label">Touches, 24h</span>
+        <span class="stat-value">@Model.ActivitiesToday</span>
+        <span class="stat-hint">calls, emails, meetings</span>
+    </a>
 </section>
 
 <section class="card">
     <div class="card-head">
-        <div><h2>Pipeline</h2><p class="sub">Where every lead sits right now. Click a stage to filter the list.</p></div>
-        <a class="btn btn-ghost btn-sm" href="/reports">Reports</a>
+        <h2 class="card-title">Pipeline</h2>
+        <span class="muted num">@Model.ByStage.Values.Sum() leads</span>
     </div>
     <div class="card-body">
-        <div class="pipeline">
+        <div class="stackbar" role="img" aria-label="Leads by stage">
+            @foreach (var s in Stages.Ordered.Where(s => Model.ByStage[s] > 0))
+            {
+                <a class="seg-@s.Key()" href="/leads?stage=@s.Key()" style="flex:@Model.ByStage[s]" title="@s.Label(): @Model.ByStage[s]"></a>
+            }
+        </div>
+        <div class="legend">
             @foreach (var s in Stages.Ordered)
             {
-                <a class="pipeline-step @s.Key()" href="/leads?stage=@s.Key()"><span class="n">@Model.ByStage[s]</span><span class="l">@s.Label()</span></a>
+                <a href="/leads?stage=@s.Key()"><span class="l"><i class="seg-@s.Key()"></i>@s.Label()</span><span class="n">@Model.ByStage[s]</span></a>
             }
         </div>
     </div>
 </section>
 
-<section class="grid grid-3-2">
+<section class="grid grid-main">
     <div class="card">
         <div class="card-head">
-            <div><h2>Needs a human decision</h2><p class="sub">Leads with pending enrichment suggestions. Nothing changes until someone accepts it.</p></div>
-            <a class="btn btn-ghost btn-sm" href="/leads?pending=true">View all</a>
+            <h2 class="card-title">Needs your decision</h2>
+            <a class="card-link" href="/leads?pending=true">View all</a>
         </div>
         <div class="card-body flush">
             @if (Model.NeedsReview.Count == 0)
             {
-                <div class="empty"><b>Inbox zero</b>Every suggestion has been reviewed.</div>
+                <div class="empty"><b>All clear</b>Every suggestion has been reviewed.</div>
             }
-            else
-            {
-                <div class="table-wrap">
-                    <table class="table">
-                        <thead><tr><th>Company</th><th>Stage</th><th>Owner</th><th class="num">Pending</th></tr></thead>
-                        <tbody>
-                        @foreach (var l in Model.NeedsReview)
-                        {
-                            <tr class="is-link" data-href="/leads/@l.Id">
-                                <td><div class="cell-title">@l.Company</div><div class="cell-sub">@(l.ContactName ?? "No contact yet")</div></td>
-                                <td><span class="badge badge-@l.Stage.Key()">@l.Stage.Label()</span></td>
-                                <td class="cell-muted">@(l.OwnerName ?? "Unassigned")</td>
-                                <td class="num"><span class="badge badge-warning no-dot">@l.PendingSuggestions</span></td>
-                            </tr>
-                        }
-                        </tbody>
-                    </table>
-                </div>
-            }
+            <div class="list">
+                @foreach (var l in Model.NeedsReview)
+                {
+                    <a class="row" href="/leads/@l.Id">
+                        <span class="avatar sm @(l.OwnerName is null ? "idle" : "")" aria-hidden="true">@(l.OwnerName is null ? "?" : string.Concat(l.OwnerName.Split(' ').Take(2).Select(p => p[0])))</span>
+                        <span class="grow">
+                            <span class="title">@l.Company</span>
+                            <span class="sub">@(l.ContactName ?? "No contact yet")</span>
+                        </span>
+                        <span class="badge badge-@l.Stage.Key() hide-sm"><span class="dot"></span>@l.Stage.Label()</span>
+                        <span class="pill" title="Pending suggestions">@l.PendingSuggestions</span>
+                    </a>
+                }
+            </div>
         </div>
     </div>
 
-    <div class="grid" style="align-content:start">
+    <div class="stack">
         <div class="card">
             <div class="card-head">
-                <div><h2>Today's stand-up</h2><p class="sub">@Model.StandupsToday of @Model.TeamSize submitted</p></div>
-                <a class="btn btn-secondary btn-sm" href="/standups">@(Model.MyStandup is null ? "Write mine" : "Edit mine")</a>
+                <h2 class="card-title">Your stand-up</h2>
+                <span class="muted num">@Model.StandupsToday/@Model.TeamSize posted</span>
             </div>
             <div class="card-body">
                 @if (Model.MyStandup is null)
                 {
-                    <p class="cell-muted">You have not posted yet. The daily meeting runs on five questions; it takes two minutes.</p>
+                    <p class="muted" style="margin-bottom:14px">Five quick questions before the daily meeting.</p>
+                    <a class="btn btn-primary btn-sm" href="/standups">Post stand-up</a>
                 }
                 else
                 {
-                    <dl class="standup-q">
+                    <dl class="qa">
                         <dt>Today</dt><dd>@Model.MyStandup.Today</dd>
-                        <dt>Measuring</dt><dd>@(string.IsNullOrWhiteSpace(Model.MyStandup.Metric) ? "-" : Model.MyStandup.Metric)</dd>
-                        @if (!string.IsNullOrWhiteSpace(Model.MyStandup.Blockers)) { <dt>Blocked by</dt><dd class="blocker">@Model.MyStandup.Blockers</dd> }
+                        @if (!string.IsNullOrWhiteSpace(Model.MyStandup.Blockers)) { <dt>Blocked</dt><dd class="blocker">@Model.MyStandup.Blockers</dd> }
                     </dl>
                 }
             </div>
         </div>
 
         <div class="card">
-            <div class="card-head"><div><h2>Recent activity</h2></div></div>
+            <div class="card-head"><h2 class="card-title">Latest activity</h2></div>
             <div class="card-body flush">
                 <div class="list">
-                    @foreach (var (a, company) in Model.Recent)
+                    @foreach (var (a, company) in Model.Recent.Take(5))
                     {
-                        <div class="list-item">
+                        <a class="row" href="/leads/@a.LeadId">
                             <span class="kind @a.Kind.ToString().ToLowerInvariant()">@await Html.PartialAsync("_KindIcon", a.Kind)</span>
-                            <div class="what">
-                                <b>@a.Summary</b>
-                                <div class="sub"><a href="/leads/@a.LeadId">@company</a> · @(a.MemberName ?? "System")@(a.Outcome is null ? "" : " · " + a.Outcome)</div>
-                            </div>
-                            <span class="when">@Html.Raw(Relative(a.OccurredAt))</span>
-                        </div>
+                            <span class="grow"><span class="title" style="font-weight:600">@a.Summary</span><span class="sub">@company · @(a.MemberName ?? "System")</span></span>
+                            <span class="when">@Relative(a.OccurredAt)</span>
+                        </a>
                     }
                 </div>
             </div>
@@ -126,8 +131,8 @@
     static string Relative(DateTimeOffset t)
     {
         var d = DateTimeOffset.UtcNow - t;
-        if (d.TotalMinutes < 60) return $"{Math.Max(1, (int)d.TotalMinutes)}m ago";
-        if (d.TotalHours < 24) return $"{(int)d.TotalHours}h ago";
-        return $"{(int)d.TotalDays}d ago";
+        if (d.TotalMinutes < 60) return $"{Math.Max(1, (int)d.TotalMinutes)}m";
+        if (d.TotalHours < 24) return $"{(int)d.TotalHours}h";
+        return $"{(int)d.TotalDays}d";
     }
 }

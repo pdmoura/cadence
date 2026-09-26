@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/brand/logo-lockup-360.png" alt="Cadence" width="240" /></p>
+
 # Cadence
 
 **An SDR workbench: lead pipeline, AI-assisted research with human validation, daily stand-ups and the management report that comes out of them.**

@@ -12,7 +12,8 @@ public sealed class ReportsViewModel
     public required (int Pending, int Accepted, int Rejected) Suggestions { get; init; }
     public required IReadOnlyList<(Member Member, int Open, int Qualified)> ByOwner { get; init; }
     public int Total(Stage s) => PerDay[s].Sum();
-    public int Max => PerDay.Values.SelectMany(v => v).DefaultIfEmpty(0).Max();
+    // Bars stack three stages per day, so the scale is the largest stacked total, not the largest single stage.
+    public int Max => Enumerable.Range(0, Days.Count).Select(i => PerDay[Stage.Validated][i] + PerDay[Stage.Contacted][i] + PerDay[Stage.Qualified][i]).DefaultIfEmpty(0).Max();
     public double AcceptanceRate => Suggestions.Accepted + Suggestions.Rejected == 0 ? 0 : (double)Suggestions.Accepted / (Suggestions.Accepted + Suggestions.Rejected);
 }
 

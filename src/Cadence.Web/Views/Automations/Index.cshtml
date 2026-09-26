@@ -1,66 +1,69 @@
 @model AutomationsViewModel
 @{
     ViewData["Title"] = "Automations";
-    ViewData["Eyebrow"] = "Webhooks & integrations";
+    ViewData["Eyebrow"] = "Work the SDR team no longer does by hand.";
+    var accepted = Model.Deliveries.Count(d => d.Status == "accepted");
+    var rejected = Model.Deliveries.Count(d => d.Status != "accepted");
 }
 
-<section class="grid grid-3-2">
+<section class="grid grid-main">
     <div class="card">
-        <div class="card-head"><div><h2>Inbound lead webhook</h2><p class="sub">Website forms, ad platforms and Zapier post here. Signed, de-duplicated by email, enriched, logged.</p></div></div>
-        <div class="card-body" style="display:grid;gap:14px">
-            <dl class="dl">
-                <dt>Endpoint</dt><dd><code>POST /webhooks/leads</code></dd>
-                <dt>Signature</dt><dd><code>X-Cadence-Signature: sha256=HMAC_SHA256(secret, raw body)</code></dd>
-                <dt>Secret</dt><dd>@if (Model.SecretConfigured) { <span class="badge badge-success">configured</span> } else { <span class="badge badge-danger">missing (Webhooks:Secret)</span> }</dd>
-                <dt>Responses</dt><dd><code>201 created</code> · <code>200 duplicate</code> · <code>401 invalid signature</code> · <code>400 bad payload</code></dd>
-            </dl>
-            <div>
-                <div class="field"><label>Example body</label></div>
-                <pre class="report" id="wh-body">@Model.ExampleBody</pre>
-            </div>
-            <div>
-                <div class="field"><label>Signature for that exact body with the current secret</label></div>
-                <pre class="report" id="wh-sig">@Model.ExampleSignature</pre>
-            </div>
-            <div class="callout">Try it locally:<br /><code>curl -X POST http://localhost:8080/webhooks/leads -H "Content-Type: application/json" -H "X-Cadence-Signature: @Model.ExampleSignature" -d '@Model.ExampleBody'</code></div>
+        <div class="card-head">
+            <h2 class="card-title">Inbound lead webhook</h2>
+            @if (Model.SecretConfigured) { <span class="badge badge-ok"><span class="dot"></span>Signed</span> } else { <span class="badge badge-bad"><span class="dot"></span>Secret missing</span> }
+        </div>
+        <div class="card-body">
+            <p class="muted" style="margin-bottom:8px">Forms and ad platforms post here. Each delivery is verified, de-duplicated by email and queued for enrichment.</p>
+            <div class="code-row"><span class="k">Endpoint</span><code>POST /webhooks/leads</code></div>
+            <div class="code-row"><span class="k">Header</span><code>X-Cadence-Signature: sha256=&lt;HMAC of body&gt;</code></div>
+            <div class="code-row"><span class="k">Replies</span><span class="chips"><span class="badge badge-ok">201 created</span><span class="badge badge-neutral">200 duplicate</span><span class="badge badge-bad">401 bad signature</span></span></div>
+            <details class="disclosure" style="margin-top:14px">
+                <summary class="btn btn-secondary btn-sm"><span class="when-closed">Try it with curl</span><span class="when-open">Hide example</span></summary>
+                <div class="stack" style="gap:10px;margin-top:14px">
+                    <pre class="snippet">curl -X POST @(Context.Request.Scheme)://@(Context.Request.Host)/webhooks/leads \
+  -H "Content-Type: application/json" \
+  -H "X-Cadence-Signature: @Model.ExampleSignature" \
+  -d '@Model.ExampleBody'</pre>
+                    <p class="hint">The signature is valid only for this exact body, so the example can be shared safely.</p>
+                </div>
+            </details>
         </div>
     </div>
 
-    <div class="card" style="align-self:start">
-        <div class="card-head"><div><h2>What is automated today</h2></div></div>
-        <div class="card-body">
-            <div class="stat-row"><span class="name">Lead intake from forms</span><span class="badge badge-success no-dot">live</span></div>
-            <div class="stat-row"><span class="name">Website + industry + phone normalisation (rules)</span><span class="badge badge-success no-dot">live</span></div>
-            <div class="stat-row"><span class="name">LLM field proposals with human review</span><span class="badge badge-brand no-dot">optional</span></div>
-            <div class="stat-row"><span class="name">Daily management report from stand-ups</span><span class="badge badge-success no-dot">live</span></div>
-            <div class="stat-row"><span class="name">Reply detection from mailbox</span><span class="badge badge-neutral no-dot">next</span></div>
+    <div class="card">
+        <div class="card-head"><h2 class="card-title">Running today</h2></div>
+        <div class="card-body" style="padding-top:4px">
+            <div class="kv"><span class="k">Lead intake from forms</span><span class="badge badge-ok">Live</span></div>
+            <div class="kv"><span class="k">Website, industry and phone rules</span><span class="badge badge-ok">Live</span></div>
+            <div class="kv"><span class="k">Daily report from stand-ups</span><span class="badge badge-ok">Live</span></div>
+            <div class="kv"><span class="k">LLM field proposals</span><span class="badge badge-brand">Optional</span></div>
+            <div class="kv"><span class="k">Reply detection</span><span class="badge badge-neutral">Next</span></div>
         </div>
     </div>
 </section>
 
 <section class="card">
-    <div class="card-head"><div><h2>Delivery log</h2><p class="sub">Last 50 deliveries, including the ones that were rejected.</p></div></div>
-    <div class="card-body flush">
-        <div class="table-wrap">
-            <table class="table">
-                <thead><tr><th>Received</th><th>Source</th><th>Event</th><th>Signature</th><th>Result</th><th>Payload</th></tr></thead>
-                <tbody>
-                @foreach (var d in Model.Deliveries)
-                {
-                    <tr>
-                        <td class="cell-muted" style="white-space:nowrap">@d.ReceivedAt.ToString("d MMM HH:mm")</td>
-                        <td>@d.Source</td>
-                        <td class="mono">@d.Event</td>
-                        <td>@if (d.SignatureValid) { <span class="badge badge-success">valid</span> } else { <span class="badge badge-danger">invalid</span> }</td>
-                        <td>
-                            <span class="badge @(d.Status == "accepted" ? "badge-success" : d.Status == "rejected" ? "badge-danger" : "badge-warning") no-dot">@d.Status</span>
-                            <div class="cell-sub">@if (d.LeadId is { } id) { <a href="/leads/@id">@d.Detail</a> } else { @d.Detail }</div>
-                        </td>
-                        <td><code style="display:block;max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="@d.Payload">@d.Payload</code></td>
-                    </tr>
-                }
-                </tbody>
-            </table>
-        </div>
+    <div class="card-head">
+        <h2 class="card-title">Deliveries</h2>
+        <span class="muted num">@accepted accepted · @rejected rejected</span>
+    </div>
+    <div class="table-wrap">
+        <table class="table">
+            <thead><tr><th>Received</th><th class="hide-sm">Source</th><th>Result</th><th class="hide-sm">Payload</th></tr></thead>
+            <tbody>
+            @foreach (var d in Model.Deliveries)
+            {
+                <tr>
+                    <td class="muted num" style="white-space:nowrap">@d.ReceivedAt.ToString("d MMM, HH:mm")</td>
+                    <td class="hide-sm">@d.Source</td>
+                    <td>
+                        <span class="badge @(d.Status == "accepted" ? "badge-ok" : d.Status == "rejected" ? "badge-bad" : "badge-warn")">@(d.Status == "accepted" ? "Accepted" : d.Status == "rejected" ? "Rejected" : "Error")</span>
+                        <div class="cell-sub">@if (d.LeadId is { } id) { <a class="card-link" href="/leads/@id">@d.Detail</a> } else { @d.Detail }</div>
+                    </td>
+                    <td class="hide-sm"><code style="display:block;max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)" title="@d.Payload">@d.Payload</code></td>
+                </tr>
+            }
+            </tbody>
+        </table>
     </div>
 </section>
